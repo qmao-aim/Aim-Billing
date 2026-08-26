@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Billing @ViewBag.Title</title>
+    <style>
+        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #f4f5f7; margin: 0; color: #1c2530; }
+        header { background: linear-gradient(90deg, #142129, #2a5753 50%, #3d8476); color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+        header a { color: #fff; text-decoration: none; margin-left: 16px; font-size: 14px; }
+        main { max-width: 720px; margin: 40px auto; background: #fff; padding: 32px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { font-size: 20px; margin-top: 0; }
+        label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
+        input[type=email], input[type=password], input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccd2d9; border-radius: 4px; font-size: 14px; }
+        button, input[type=submit] { background: #2a5753; color: #fff; border: none; padding: 9px 18px; border-radius: 4px; font-size: 14px; cursor: pointer; margin-top: 16px; }
+        button:hover, input[type=submit]:hover { background: #234845; }
+        .validation-summary-errors, .field-validation-error { color: #b3261e; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; font-size: 14px; }
+        .message { background: #e6f4ea; color: #1e4620; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
+        .error { background: #fce8e6; color: #7f1d15; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <header>
+        <strong>Ankura Legal Analytics Suite &middot; Billing</strong>
+        <nav>
+            @if (Request.IsAuthenticated)
+            {
+                if (User.IsInRole("Admin"))
+                {
+                    <a href="@Url.Action("Index", "Admin")">Admin</a>
+                }
+                <a href="@Url.Action("ChangePassword", "Manage")">Change password</a>
+                using (Html.BeginForm("LogOff", "Account", FormMethod.Post, new { style = "display:inline" }))
+                {
+                    @Html.AntiForgeryToken()
+                    <button type="submit" style="background:none;color:#fff;padding:0;margin:0;text-decoration:underline;font-size:14px;">Log off</button>
+                }
+            }
+        </nav>
+    </header>
+    <main>
+        @RenderBody()
+    </main>
+</body>
+</html>

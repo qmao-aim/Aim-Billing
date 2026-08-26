@@ -1,0 +1,23 @@
+@model Billing.ViewModels.LoginViewModel
+@{ ViewBag.Title = "Log in"; }
+<h1>Log in</h1>
+@using (Html.BeginForm("Login", "Account", new { returnUrl = ViewBag.ReturnUrl as string }, FormMethod.Post))
+{
+    @Html.AntiForgeryToken()
+    @Html.ValidationSummary(true)
+
+    @Html.LabelFor(m => m.Email)
+    @Html.TextBoxFor(m => m.Email, new { type = "email" })
+    @Html.ValidationMessageFor(m => m.Email)
+
+    @Html.LabelFor(m => m.Password)
+    @Html.PasswordFor(m => m.Password)
+    @Html.ValidationMessageFor(m => m.Password)
+
+    <label style="display:flex;align-items:center;gap:6px;font-weight:normal;">
+        @Html.CheckBoxFor(m => m.RememberMe) Remember me
+    </label>
+
+    <button type="submit">Log in</button>
+}
+<p style="margin-top:20px;font-size:14px;">No account yet? <a href="@Url.Action("Register")">Register</a></p>

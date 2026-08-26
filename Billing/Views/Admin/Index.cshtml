@@ -1,0 +1,61 @@
+@model Billing.ViewModels.AdminIndexViewModel
+@{ ViewBag.Title = "Admin"; }
+<h1>Users</h1>
+@if (Model.Message != null)
+{
+    <div class="message">@Model.Message</div>
+}
+@if (Model.Error != null)
+{
+    <div class="error">@Model.Error</div>
+}
+<table>
+    <thead>
+        <tr>
+            <th>Email</th><th>Role</th><th>Registered</th><th>Approved</th>
+            <th>Set role</th><th>Reset password</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var u in Model.Users)
+        {
+            <tr>
+                <td>@u.Email</td>
+                <td>@u.Role</td>
+                <td>@u.CreatedOn.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                <td>
+                    @if (u.ApprovedOn.HasValue)
+                    {
+                        @(u.ApprovedBy + " on " + u.ApprovedOn.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                    }
+                    else
+                    {
+                        @Html.Raw("&mdash;")
+                    }
+                </td>
+                <td>
+                    @using (Html.BeginForm("SetRole", "Admin", FormMethod.Post, new { style = "display:flex;gap:6px;" }))
+                    {
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="userId" value="@u.Id" />
+                        <select name="role">
+                            <option value="" selected="@(u.Role == "Pending")">Pending (no access)</option>
+                            <option value="PM" selected="@(u.Role == "PM")">PM</option>
+                            <option value="Admin" selected="@(u.Role == "Admin")">Admin</option>
+                        </select>
+                        <button type="submit">Save</button>
+                    }
+                </td>
+                <td>
+                    @using (Html.BeginForm("ResetPassword", "Admin", FormMethod.Post, new { style = "display:flex;gap:6px;" }))
+                    {
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="userId" value="@u.Id" />
+                        <input type="text" name="newPassword" placeholder="New password" />
+                        <button type="submit">Reset</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

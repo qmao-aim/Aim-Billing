@@ -1,0 +1,7 @@
+@{ ViewBag.Title = "Account"; }
+<h1>Account</h1>
+@if (ViewBag.StatusMessage != null)
+{
+    <div class="message">@ViewBag.StatusMessage</div>
+}
+<p><a href="@Url.Action("ChangePassword")">Change your password</a></p>
