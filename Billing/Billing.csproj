@@ -195,10 +195,6 @@
     <Content Include="Views\Manage\Index.cshtml" />
     <Content Include="Views\Manage\ChangePassword.cshtml" />
     <Content Include="Views\Admin\Index.cshtml" />
-    <!-- Wildcard on purpose: the built SPA's filenames change (hashed) on every
-         frontend rebuild — an itemized list would go stale immediately. This
-         picks up whatever's actually in the folder at publish time. -->
-    <Content Include="Billing-SPA\**\*.*" Exclude="Billing-SPA\README.txt" />
     <Content Include="packages.config">
       <SubType>Designer</SubType>
     </Content>
@@ -213,6 +209,21 @@
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v10.0\WebApplications\Microsoft.WebApplication.targets" Condition="false" />
   <Target Name="MvcBuildViews" AfterTargets="AfterBuild" Condition="'$(MvcBuildViews)'=='true'">
     <AspNetCompiler VirtualPath="temp" PhysicalPath="$(WebProjectOutputDir)" />
+  </Target>
+  <!-- Regenerates Billing-SPA from the frontend repo's current source before every
+       publish, so a publish can never ship a missing or stale frontend build (the
+       folder is .gitignore'd — see .gitignore — precisely because this replaces
+       needing to commit generated output). The Content item is declared inside
+       this target, not at the top level, specifically so MSBuild scans the folder
+       AFTER the script has regenerated it — a top-level wildcard is evaluated once
+       when the project loads, before this target ever runs, and would still see
+       the previous build's file list.
+       NOTE: requires Node.js/npm on whatever machine runs Publish. -->
+  <Target Name="BuildFrontend" BeforeTargets="Publish">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build-frontend.ps1&quot;" />
+    <ItemGroup>
+      <Content Include="Billing-SPA\**\*.*" />
+    </ItemGroup>
   </Target>
   <ProjectExtensions>
     <VisualStudio>
