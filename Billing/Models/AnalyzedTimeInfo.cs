@@ -6,6 +6,12 @@ namespace Billing.Models
     // (PascalCase) so the SPA can deserialize with no mapping layer.
     public class AnalyzedTimeInfo
     {
+        // Which region's database this row actually came from ("US"/"UK"), or
+        // "Global" for the synthetic combined-total row. Lets the frontend build
+        // a correct /projects/{region}/{id} link for a row even when the list
+        // itself was requested with region=global (a merge of both).
+        public string Region { get; set; }
+
         public int WorkspaceId { get; set; }
         public string WorkspaceName { get; set; }
         public string MatterNumber { get; set; }

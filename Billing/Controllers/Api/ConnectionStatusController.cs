@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using System.Web.Http;
 using Billing.DataAccess;
 using Billing.Models;
+using Billing.Services;
 
 namespace Billing.Controllers.Api
 {
@@ -12,16 +14,22 @@ namespace Billing.Controllers.Api
 
         [HttpGet]
         [Route("")]
-        public IHttpActionResult Get()
+        public IHttpActionResult Get(string region)
         {
+            var normalizedRegion = NormalizeRegion(region);
+
             // Not environment-scoped in the SPA's contract — mirrors legacy BillingStatusJson,
-            // which always watches the prod sync clock regardless of suffix.
-            var lastSynced = _repo.GetLatestSyncedTime("");
-            var minutes = (DateTime.UtcNow - lastSynced).TotalMinutes;
+            // which always watches the prod sync clock regardless of suffix. For Global,
+            // report the OLDEST sync across regions — a stale region should still surface
+            // as "connection is off", not get hidden behind a fresher one.
+            var oldestSynced = Regions.Resolve(normalizedRegion)
+                .Select(r => _repo.GetLatestSyncedTime(r, ""))
+                .Min();
+            var minutes = (DateTime.UtcNow - oldestSynced).TotalMinutes;
             return Ok(new ConnectionStatus
             {
                 Online = minutes < 65,
-                LastSyncedOn = lastSynced.ToString("o"),
+                LastSyncedOn = oldestSynced.ToString("o"),
                 MinutesSinceSync = Math.Round(minutes, 1),
             });
         }

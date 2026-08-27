@@ -11,14 +11,27 @@ namespace Billing.DataAccess
     // rate-distribution screens. Dollar figures are read straight from billing_tier (the
     // offline job's already threshold-correct output) — never re-derived or apportioned
     // per-app, per the product decision that per-app dollar splits aren't invented.
+    //
+    // `region` may be "Global" here (unlike most repositories) — every public method
+    // resolves it to the real region(s) via Regions.Resolve and merges per-region results.
     public class DashboardRepository
     {
         private readonly ProjectRepository _projects = new ProjectRepository();
 
-        public List<AppUsage> GetAppUsage(int? year, string suffix)
+        public List<AppUsage> GetAppUsage(int? year, string region, string suffix)
+        {
+            var perRegion = Regions.Resolve(region).Select(r => GetAppUsageForRegion(year, r, suffix)).ToList();
+            return AppMetadata.Apps.Select(app => new AppUsage
+            {
+                App = app,
+                Documents = perRegion.Sum(list => list.First(u => u.App == app).Documents),
+            }).ToList();
+        }
+
+        private List<AppUsage> GetAppUsageForRegion(int? year, string region, string suffix)
         {
             var columns = string.Join(", ", AppMetadata.Apps.Select(a => $"SUM([{a}]) AS [{a}]"));
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var row = conn.QueryFirstOrDefault(
                     $@"SELECT {columns} FROM [dbo].[billing{suffix}] b
@@ -36,18 +49,83 @@ namespace Billing.DataAccess
             }
         }
 
-        public List<decimal> GetRateDistribution(string suffix)
+        public List<decimal> GetRateDistribution(string region, string suffix)
         {
-            var projects = _projects.GetProjectsInfo(false, suffix).Where(p => p.IsDefined == 0).ToList();
-            var rates = projects.Select(p => p.TierTotalCount > 0
-                ? p.TierTotalPrice / p.TierTotalCount
-                : p.UnitPrice).OrderBy(r => r).ToList();
+            var rates = new List<decimal>();
+            foreach (var oneRegion in Regions.Resolve(region))
+            {
+                var projects = _projects.GetProjectsInfo(false, oneRegion, suffix).Where(p => p.IsDefined == 0);
+                rates.AddRange(projects.Select(p => p.TierTotalCount > 0 ? p.TierTotalPrice / p.TierTotalCount : p.UnitPrice));
+            }
+            rates.Sort();
             return rates;
         }
 
-        public PortfolioTotals GetPortfolioTotals(int? year, string suffix)
+        public PortfolioTotals GetPortfolioTotals(int? year, string region, string suffix)
         {
-            using (var conn = BillingDbConnectionFactory.Create())
+            var raws = Regions.Resolve(region).Select(r => GetRawTotalsForRegion(year, r, suffix)).ToList();
+
+            var mergedSeries = MergeSeries(raws.Select(r => r.Series));
+            long totalDocs = raws.Sum(r => r.TotalDocuments);
+            int activeProjects = raws.Sum(r => r.ActiveProjects);
+
+            if (year.HasValue)
+            {
+                var mergedPrior = MergeSeries(raws.Select(r => r.PriorSeries));
+                var (pct, label) = ComputeChange(mergedSeries, "Latest complete month vs. prior");
+                return new PortfolioTotals
+                {
+                    TotalBilled = mergedSeries.Sum(p => p.Value),
+                    TotalDocuments = totalDocs,
+                    ActiveProjects = activeProjects,
+                    Series = mergedSeries,
+                    PriorSeries = mergedPrior,
+                    SeriesLabel = year.Value.ToString(),
+                    PriorSeriesLabel = (year.Value - 1).ToString(),
+                    SeriesNote = null,
+                    ChangePct = pct,
+                    ChangeLabel = label,
+                };
+            }
+            else
+            {
+                int currentYear = DateTime.UtcNow.Year;
+                int monthsBilledThisYear = raws.SelectMany(r => r.BilledMonthsThisYear).Distinct().Count();
+                string note = (monthsBilledThisYear > 0 && monthsBilledThisYear < 12)
+                    ? $"{currentYear} is in progress — {monthsBilledThisYear} of 12 months billed so far."
+                    : null;
+
+                var completeYears = mergedSeries.Where(p => p.Label != currentYear.ToString()).ToList();
+                var (pct, label) = ComputeChange(completeYears, "vs. prior complete year");
+
+                return new PortfolioTotals
+                {
+                    TotalBilled = mergedSeries.Sum(p => p.Value),
+                    TotalDocuments = totalDocs,
+                    ActiveProjects = activeProjects,
+                    Series = mergedSeries,
+                    PriorSeries = null,
+                    SeriesLabel = "Billed per year",
+                    PriorSeriesLabel = null,
+                    SeriesNote = note,
+                    ChangePct = pct,
+                    ChangeLabel = label,
+                };
+            }
+        }
+
+        private class RawRegionTotals
+        {
+            public List<SeriesPoint> Series;
+            public List<SeriesPoint> PriorSeries;
+            public long TotalDocuments;
+            public int ActiveProjects;
+            public List<int> BilledMonthsThisYear = new List<int>();
+        }
+
+        private RawRegionTotals GetRawTotalsForRegion(int? year, string region, string suffix)
+        {
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 if (year.HasValue)
                 {
@@ -64,20 +142,12 @@ namespace Billing.DataAccess
                            WHERE (p.[is_test] IS NULL OR p.[is_test] = 0) AND b.[year] = @year AND b.[total_amount] > 0",
                         new { year = year.Value }) ?? 0;
 
-                    var (pct, label) = ComputeChange(currentSeries, "Latest complete month vs. prior");
-
-                    return new PortfolioTotals
+                    return new RawRegionTotals
                     {
-                        TotalBilled = currentSeries.Sum(p => p.Value),
-                        TotalDocuments = totalDocs,
-                        ActiveProjects = activeProjects,
                         Series = currentSeries,
                         PriorSeries = priorSeries,
-                        SeriesLabel = year.Value.ToString(),
-                        PriorSeriesLabel = (year.Value - 1).ToString(),
-                        SeriesNote = null,
-                        ChangePct = pct,
-                        ChangeLabel = label,
+                        TotalDocuments = totalDocs,
+                        ActiveProjects = activeProjects,
                     };
                 }
                 else
@@ -105,34 +175,36 @@ namespace Billing.DataAccess
                            INNER JOIN [dbo].[project{suffix}] p ON b.workspaceId = p.workspaceId
                            WHERE (p.[is_test] IS NULL OR p.[is_test] = 0) AND b.[total_amount] > 0") ?? 0;
 
-                    int monthsBilledThisYear = conn.QueryFirstOrDefault<int?>(
-                        $@"SELECT COUNT(DISTINCT bt.[month]) FROM [dbo].[billing_tier{suffix}] bt
+                    var billedMonths = conn.Query<int>(
+                        $@"SELECT DISTINCT bt.[month] FROM [dbo].[billing_tier{suffix}] bt
                            INNER JOIN [dbo].[project{suffix}] p ON bt.workspaceId = p.workspaceId
                            WHERE (p.[is_test] IS NULL OR p.[is_test] = 0) AND bt.[year] = @currentYear AND bt.[amount] > 0",
-                        new { currentYear }) ?? 0;
+                        new { currentYear }).ToList();
 
-                    string note = (monthsBilledThisYear > 0 && monthsBilledThisYear < 12)
-                        ? $"{currentYear} is in progress — {monthsBilledThisYear} of 12 months billed so far."
-                        : null;
-
-                    var completeYears = series.Where(p => p.Label != currentYear.ToString()).ToList();
-                    var (pct, label) = ComputeChange(completeYears, "vs. prior complete year");
-
-                    return new PortfolioTotals
+                    return new RawRegionTotals
                     {
-                        TotalBilled = series.Sum(p => p.Value),
-                        TotalDocuments = totalDocs,
-                        ActiveProjects = activeProjects,
                         Series = series,
                         PriorSeries = null,
-                        SeriesLabel = "Billed per year",
-                        PriorSeriesLabel = null,
-                        SeriesNote = note,
-                        ChangePct = pct,
-                        ChangeLabel = label,
+                        TotalDocuments = totalDocs,
+                        ActiveProjects = activeProjects,
+                        BilledMonthsThisYear = billedMonths,
                     };
                 }
             }
+        }
+
+        // Sums matching-index points across however many regions were queried — every
+        // region's series uses the same label set/order (months, or the fixed
+        // firstYear..currentYear range), so summing by position is safe and avoids
+        // needing to join on the label string.
+        private static List<SeriesPoint> MergeSeries(IEnumerable<List<SeriesPoint>> serieses)
+        {
+            var list = serieses.Where(s => s != null).ToList();
+            if (list.Count == 0) return null;
+            int length = list[0].Count;
+            return Enumerable.Range(0, length)
+                .Select(i => new SeriesPoint { Label = list[0][i].Label, Value = list.Sum(s => s[i].Value) })
+                .ToList();
         }
 
         private static List<SeriesPoint> GetMonthlyBilledSeries(System.Data.SqlClient.SqlConnection conn, int year, string suffix)

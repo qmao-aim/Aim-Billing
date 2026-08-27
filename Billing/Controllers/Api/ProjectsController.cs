@@ -11,21 +11,23 @@ namespace Billing.Controllers.Api
 
         [HttpGet]
         [Route("projects")]
-        public IHttpActionResult GetProjects(string env, bool includeTest = false, string year = null)
+        public IHttpActionResult GetProjects(string env, string region, bool includeTest = false, string year = null)
         {
             string suffix = SuffixFor(env);
+            string normalizedRegion = NormalizeRegion(region);
             // Only Admins may ever see test workspaces, regardless of what the client asks for.
             bool includeTestEffective = includeTest && IsAdmin;
-            var rows = _repo.GetProjectsAnalyzedTimeMonthTable(YearFilterParser.Parse(year), includeTestEffective, suffix);
+            var rows = _repo.GetProjectsAnalyzedTimeMonthTable(YearFilterParser.Parse(year), includeTestEffective, normalizedRegion, suffix);
             return Ok(rows);
         }
 
         [HttpGet]
         [Route("projects/{workspaceId:int}/detail")]
-        public IHttpActionResult GetProjectDetail(int workspaceId, string env, string year = null)
+        public IHttpActionResult GetProjectDetail(int workspaceId, string env, string region, string year = null)
         {
             string suffix = SuffixFor(env);
-            var rows = _repo.GetAnalyzedTimeMonthTable(workspaceId, YearFilterParser.Parse(year), suffix);
+            string normalizedRegion = RequireSpecificRegion(region);
+            var rows = _repo.GetAnalyzedTimeMonthTable(workspaceId, YearFilterParser.Parse(year), normalizedRegion, suffix);
             return Ok(rows);
         }
     }

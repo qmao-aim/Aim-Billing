@@ -14,9 +14,9 @@ namespace Billing.DataAccess
     {
         private readonly ProjectRepository _projects = new ProjectRepository();
 
-        public BillingRule GetRule(int workspaceId, string suffix)
+        public BillingRule GetRule(int workspaceId, string region, string suffix)
         {
-            var project = _projects.GetProjectInfo(workspaceId, suffix);
+            var project = _projects.GetProjectInfo(workspaceId, region, suffix);
             if (project == null) return null;
 
             // For a project with no rule yet, ProjectRepository leaves the tier maps
@@ -51,9 +51,9 @@ namespace Billing.DataAccess
             };
         }
 
-        public SaveRuleResult SaveRule(int workspaceId, string suffix, BillingRule rule, string savedByEmail)
+        public SaveRuleResult SaveRule(int workspaceId, string region, string suffix, BillingRule rule, string savedByEmail)
         {
-            var existing = _projects.GetProjectInfo(workspaceId, suffix);
+            var existing = _projects.GetProjectInfo(workspaceId, region, suffix);
             if (existing == null) return SaveRuleResult.Failure("Project not found.");
             if (existing.IsDefined != -1)
             {
@@ -91,7 +91,7 @@ namespace Billing.DataAccess
                 }
             }
 
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 conn.Open();
                 using (var tx = conn.BeginTransaction())

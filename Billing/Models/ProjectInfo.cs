@@ -7,6 +7,7 @@ namespace Billing.Models
     // PredictiveCodingNet.Models.PCStatusCheckModel.ProjectInfo carries.
     public class ProjectInfo
     {
+        public string Region { get; set; }
         public int WorkspaceId { get; set; }
         public string Name { get; set; }
         public string MatterNumber { get; set; }

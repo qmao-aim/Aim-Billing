@@ -23,5 +23,33 @@ namespace Billing.Controllers.Api
             }
             return EnvironmentSuffix.ForEnvironment(env);
         }
+
+        // "Global"/"US"/"UK", case-insensitively — a 400 for a typo'd region beats an
+        // unhandled exception turning into a 500.
+        protected string NormalizeRegion(string region)
+        {
+            try
+            {
+                return Regions.Normalize(region);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new HttpResponseException(Request.CreateResponse(HttpStatusCode.BadRequest,
+                    new { message = ex.Message }));
+            }
+        }
+
+        // A single project/rule always belongs to exactly one real region — "Global"
+        // is only meaningful for the aggregate list/dashboard endpoints.
+        protected string RequireSpecificRegion(string region)
+        {
+            var normalized = NormalizeRegion(region);
+            if (normalized == Regions.Global)
+            {
+                throw new HttpResponseException(Request.CreateResponse(HttpStatusCode.BadRequest,
+                    new { message = "This endpoint needs a specific region (US/UK), not Global." }));
+            }
+            return normalized;
+        }
     }
 }

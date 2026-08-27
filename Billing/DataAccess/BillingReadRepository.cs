@@ -12,14 +12,18 @@ namespace Billing.DataAccess
     // per the documented contract — for the monthly breakdown arrays specifically, 'all'
     // has no single 12-month cycle to show, so Counts/Money come back zeroed and the
     // lifetime totals (TotalCount/TotalPrice/TotalBillCount) carry the real numbers.
+    //
+    // `region` is "US" or "UK" for anything scoped to one workspace (a project lives in
+    // exactly one region's database) — only the portfolio list (GetProjectsAnalyzedTimeMonthTable)
+    // accepts "Global", by querying every region and merging.
     public class BillingReadRepository
     {
         private readonly ProjectRepository _projects = new ProjectRepository();
 
-        public List<int> GetMonthTableForWorkspace(int workspaceId, int year, string fieldName, string suffix)
+        public List<int> GetMonthTableForWorkspace(int workspaceId, int year, string fieldName, string region, string suffix)
         {
             AssertKnownColumn(fieldName);
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var rows = conn.Query(
                     $@"SELECT [month] AS Month, [{fieldName}] AS Value FROM [dbo].[billing{suffix}]
@@ -39,10 +43,10 @@ namespace Billing.DataAccess
             }
         }
 
-        public int GetTotalCountForWorkspace(int workspaceId, string fieldName, string suffix)
+        public int GetTotalCountForWorkspace(int workspaceId, string fieldName, string region, string suffix)
         {
             AssertKnownColumn(fieldName);
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 return conn.QueryFirstOrDefault<int?>(
                     $@"SELECT sum([{fieldName}]) FROM [dbo].[billing{suffix}] WHERE workspaceId = @workspaceId",
@@ -60,7 +64,7 @@ namespace Billing.DataAccess
 
         // tier -> month(0=lifetime, 1..12=that month of `year`) -> (count, amount)
         public Dictionary<string, Dictionary<int, (int Count, decimal Amount)>> GetMonthTierCountsForWorkspace(
-            int workspaceId, int? year, ProjectInfo project, string suffix)
+            int workspaceId, int? year, ProjectInfo project, string region, string suffix)
         {
             var tiers = project.SingleUnitRate
                 ? new[] { "Tier_0" }
@@ -73,7 +77,7 @@ namespace Billing.DataAccess
             }
             if (result.Count == 0) return result;
 
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var lifetime = conn.Query(
                     $@"SELECT [tier] AS Tier, sum([count]) AS Count, sum([amount]) AS Amount
@@ -110,9 +114,9 @@ namespace Billing.DataAccess
         }
 
         // month(1..12) -> (count, amount) summed across all tiers — used for the portfolio list.
-        public Dictionary<int, (int Count, decimal Amount)> GetMonthTierTableForWorkspace(int workspaceId, int year, string suffix)
+        public Dictionary<int, (int Count, decimal Amount)> GetMonthTierTableForWorkspace(int workspaceId, int year, string region, string suffix)
         {
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var rows = conn.Query(
                     $@"SELECT [month] AS Month, sum([count]) AS Count, sum([amount]) AS Amount
@@ -133,12 +137,44 @@ namespace Billing.DataAccess
             }
         }
 
-        public List<AnalyzedTimeInfo> GetProjectsAnalyzedTimeMonthTable(int? year, bool includeTest, string suffix)
+        // Public entry point: `region` may be "Global" here (the only place it's allowed to
+        // be), meaning "every region's projects, merged into one list with one combined Total".
+        public List<AnalyzedTimeInfo> GetProjectsAnalyzedTimeMonthTable(int? year, bool includeTest, string region, string suffix)
         {
-            var workspaces = _projects.GetProjectsInfo(false, suffix);
+            var rows = new List<AnalyzedTimeInfo>();
+            foreach (var oneRegion in Regions.Resolve(region))
+            {
+                rows.AddRange(GetProjectsForRegion(year, includeTest, oneRegion, suffix));
+            }
+
+            if (rows.Count > 1)
+            {
+                rows.Add(new AnalyzedTimeInfo
+                {
+                    Region = region,
+                    WorkspaceId = -1,
+                    WorkspaceName = "Total",
+                    JobName = "",
+                    TotalCount = rows.Sum(r => r.TotalCount),
+                    TotalBillCount = rows.Sum(r => r.TotalBillCount),
+                    TotalPrice = rows.Sum(r => r.TotalPrice),
+                    YearCount = rows.Sum(r => r.YearCount),
+                    JobUnitRate = -1,
+                    Counts = Enumerable.Range(0, 12).Select(i => rows.Sum(r => r.Counts[i])).ToList(),
+                    Money = Enumerable.Range(0, 12).Select(i => rows.Sum(r => r.Money[i])).ToList(),
+                });
+            }
+            return rows;
+        }
+
+        // One region's project rows, no Total row — the public method above owns combining
+        // regions and computing a single Total across whatever it gathered.
+        private List<AnalyzedTimeInfo> GetProjectsForRegion(int? year, bool includeTest, string region, string suffix)
+        {
+            var workspaces = _projects.GetProjectsInfo(false, region, suffix);
             if (includeTest)
             {
-                workspaces.AddRange(_projects.GetProjectsInfo(true, suffix));
+                workspaces.AddRange(_projects.GetProjectsInfo(true, region, suffix));
             }
 
             var rows = new List<AnalyzedTimeInfo>();
@@ -150,7 +186,7 @@ namespace Billing.DataAccess
 
                 if (ws.TierTotalCount > 0 && year.HasValue)
                 {
-                    var monthTable = GetMonthTierTableForWorkspace(ws.WorkspaceId, year.Value, suffix);
+                    var monthTable = GetMonthTierTableForWorkspace(ws.WorkspaceId, year.Value, region, suffix);
                     counts = Enumerable.Range(1, 12).Select(m => monthTable[m].Count).ToList();
                     money = Enumerable.Range(1, 12).Select(m => monthTable[m].Amount).ToList();
                     yearCount = counts.Sum();
@@ -158,6 +194,7 @@ namespace Billing.DataAccess
 
                 rows.Add(new AnalyzedTimeInfo
                 {
+                    Region = region,
                     WorkspaceId = ws.WorkspaceId,
                     WorkspaceName = ws.Name,
                     MatterNumber = ws.MatterNumber,
@@ -174,42 +211,31 @@ namespace Billing.DataAccess
                     Money = money,
                 });
             }
-
-            if (rows.Count > 1)
-            {
-                rows.Add(new AnalyzedTimeInfo
-                {
-                    WorkspaceId = -1,
-                    WorkspaceName = "Total",
-                    JobName = "",
-                    TotalCount = rows.Sum(r => r.TotalCount),
-                    TotalBillCount = rows.Sum(r => r.TotalBillCount),
-                    TotalPrice = rows.Sum(r => r.TotalPrice),
-                    YearCount = rows.Sum(r => r.YearCount),
-                    JobUnitRate = -1,
-                    Counts = Enumerable.Range(0, 12).Select(i => rows.Sum(r => r.Counts[i])).ToList(),
-                    Money = Enumerable.Range(0, 12).Select(i => rows.Sum(r => r.Money[i])).ToList(),
-                });
-            }
             return rows;
         }
 
-        public List<AnalyzedTimeInfo> GetAnalyzedTimeMonthTable(int workspaceId, int? year, string suffix)
+        // A single project, so `region` must be a real region here — never "Global".
+        public List<AnalyzedTimeInfo> GetAnalyzedTimeMonthTable(int workspaceId, int? year, string region, string suffix)
         {
-            var project = _projects.GetProjectInfo(workspaceId, suffix);
+            var project = _projects.GetProjectInfo(workspaceId, region, suffix);
             if (project == null) return new List<AnalyzedTimeInfo>();
 
             var appRows = new Dictionary<string, AnalyzedTimeInfo>();
             foreach (var app in AppMetadata.Apps)
             {
                 var monthCounts = year.HasValue
-                    ? GetMonthTableForWorkspace(workspaceId, year.Value, app, suffix)
+                    ? GetMonthTableForWorkspace(workspaceId, year.Value, app, region, suffix)
                     : new List<int>(new int[12]);
-                int totalCount = GetTotalCountForWorkspace(workspaceId, app, suffix);
+                int totalCount = GetTotalCountForWorkspace(workspaceId, app, region, suffix);
 
+                // Raw key, not the display name (AppMetadata.GetDisplayName) — this
+                // has to match BillingRule.jobExcludeList/jobGroupList's keys, which
+                // are the raw app_tier names. The frontend maps to a display label
+                // (APP_LABELS in types.ts) only at the point of rendering.
                 var row = AnalyzedTimeInfo.WithUntrackedMoney();
+                row.Region = region;
                 row.WorkspaceId = workspaceId;
-                row.JobName = AppMetadata.GetDisplayName(app);
+                row.JobName = app;
                 row.TotalCount = totalCount;
                 row.Counts = monthCounts;
                 row.YearCount = monthCounts.Sum();
@@ -226,7 +252,7 @@ namespace Billing.DataAccess
 
             if (project.IsDefined != -1)
             {
-                var tierCounts = GetMonthTierCountsForWorkspace(workspaceId, year, project, suffix);
+                var tierCounts = GetMonthTierCountsForWorkspace(workspaceId, year, project, region, suffix);
                 var tiers = tierCounts.Keys.OrderBy(t => t).ToList();
 
                 if (tiers.Count > 1)
@@ -268,6 +294,7 @@ namespace Billing.DataAccess
 
             var allAppsRow = new AnalyzedTimeInfo
             {
+                Region = region,
                 WorkspaceId = workspaceId,
                 WorkspaceName = project.Name,
                 MatterNumber = project.MatterNumber,

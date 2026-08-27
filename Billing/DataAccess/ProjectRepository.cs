@@ -8,13 +8,13 @@ namespace Billing.DataAccess
 {
     // Ports PredictiveCodingNet.Models.PCStatusCheckModel's project-level reads
     // (GetProjectInfo, GetProjectsInfo, GetProjectTierCountAndPrice, GetLatestSyncedTime)
-    // against the same central Billing database, parameterized instead of
-    // string-concatenated.
+    // against the central Billing database for a given region, parameterized instead
+    // of string-concatenated.
     public class ProjectRepository
     {
-        public ProjectInfo GetProjectInfo(int workspaceId, string suffix)
+        public ProjectInfo GetProjectInfo(int workspaceId, string region, string suffix)
         {
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var row = conn.QueryFirstOrDefault(
                     $@"SELECT workspaceId, name, matter_number, prod_info, unit_price, unit_threshold, is_test,
@@ -27,6 +27,7 @@ namespace Billing.DataAccess
 
                 var info = new ProjectInfo
                 {
+                    Region = region,
                     WorkspaceId = workspaceId,
                     Name = row.name,
                     MatterNumber = row.matter_number,
@@ -84,9 +85,9 @@ namespace Billing.DataAccess
             }
         }
 
-        public List<ProjectInfo> GetProjectsInfo(bool isTestProject, string suffix)
+        public List<ProjectInfo> GetProjectsInfo(bool isTestProject, string region, string suffix)
         {
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 string testFilter = isTestProject
                     ? "[is_test] = 1"
@@ -102,6 +103,7 @@ namespace Billing.DataAccess
                     int workspaceId = row.workspaceId;
                     var info = new ProjectInfo
                     {
+                        Region = region,
                         WorkspaceId = workspaceId,
                         Name = row.name,
                         MatterNumber = row.matter_number,
@@ -128,9 +130,9 @@ namespace Billing.DataAccess
         // table regardless of the suffix argument passed in — an apparent oversight, not
         // a deliberate business rule (unlike the threshold logic). Fixed here so Dev's
         // connection status reflects Dev sync activity.
-        public DateTime GetLatestSyncedTime(string suffix)
+        public DateTime GetLatestSyncedTime(string region, string suffix)
         {
-            using (var conn = BillingDbConnectionFactory.Create())
+            using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var value = conn.QueryFirstOrDefault<DateTime?>(
                     $"SELECT max([synced_on]) FROM [dbo].[project{suffix}]");

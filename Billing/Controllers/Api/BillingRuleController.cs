@@ -11,20 +11,22 @@ namespace Billing.Controllers.Api
 
         [HttpGet]
         [Route("")]
-        public IHttpActionResult Get(int workspaceId, string env)
+        public IHttpActionResult Get(int workspaceId, string env, string region)
         {
             string suffix = SuffixFor(env);
-            return Ok(_repo.GetRule(workspaceId, suffix));
+            string normalizedRegion = RequireSpecificRegion(region);
+            return Ok(_repo.GetRule(workspaceId, normalizedRegion, suffix));
         }
 
         [HttpPost]
         [Route("")]
-        public IHttpActionResult Post(int workspaceId, string env, [FromBody] BillingRule rule)
+        public IHttpActionResult Post(int workspaceId, string env, string region, [FromBody] BillingRule rule)
         {
             string suffix = SuffixFor(env);
+            string normalizedRegion = RequireSpecificRegion(region);
             // savedBy is derived from the authenticated user, never trusted from the body —
             // otherwise a caller could attribute a rule change to someone else.
-            var result = _repo.SaveRule(workspaceId, suffix, rule, CurrentUserEmail);
+            var result = _repo.SaveRule(workspaceId, normalizedRegion, suffix, rule, CurrentUserEmail);
             return Ok(result);
         }
     }

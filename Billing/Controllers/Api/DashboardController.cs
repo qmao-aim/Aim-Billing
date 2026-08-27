@@ -11,26 +11,29 @@ namespace Billing.Controllers.Api
 
         [HttpGet]
         [Route("portfolio-totals")]
-        public IHttpActionResult GetPortfolioTotals(string env, string year = null)
+        public IHttpActionResult GetPortfolioTotals(string env, string region, string year = null)
         {
             string suffix = SuffixFor(env);
-            return Ok(_repo.GetPortfolioTotals(YearFilterParser.Parse(year), suffix));
+            string normalizedRegion = NormalizeRegion(region);
+            return Ok(_repo.GetPortfolioTotals(YearFilterParser.Parse(year), normalizedRegion, suffix));
         }
 
         [HttpGet]
         [Route("app-usage")]
-        public IHttpActionResult GetAppUsage(string env, string year = null)
+        public IHttpActionResult GetAppUsage(string env, string region, string year = null)
         {
             string suffix = SuffixFor(env);
-            return Ok(_repo.GetAppUsage(YearFilterParser.Parse(year), suffix));
+            string normalizedRegion = NormalizeRegion(region);
+            return Ok(_repo.GetAppUsage(YearFilterParser.Parse(year), normalizedRegion, suffix));
         }
 
         [HttpGet]
         [Route("rate-distribution")]
-        public IHttpActionResult GetRateDistribution(string env)
+        public IHttpActionResult GetRateDistribution(string env, string region)
         {
             string suffix = SuffixFor(env);
-            return Ok(_repo.GetRateDistribution(suffix));
+            string normalizedRegion = NormalizeRegion(region);
+            return Ok(_repo.GetRateDistribution(normalizedRegion, suffix));
         }
     }
 }
