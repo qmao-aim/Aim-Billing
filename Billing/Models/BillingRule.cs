@@ -32,6 +32,15 @@ namespace Billing.Models
         [JsonProperty("threshold")]
         public int Threshold { get; set; }
 
+        // Vero/Chat is billed separately from the tiered apps above (docCount x
+        // chat_unit_price on creation, then again every chat_period months while
+        // active — see UpdateChatIndexBilling in the offline job). Zeroed when isTest.
+        [JsonProperty("chatUnitPrice")]
+        public decimal ChatUnitPrice { get; set; }
+
+        [JsonProperty("chatPeriod")]
+        public int ChatPeriod { get; set; }
+
         [JsonProperty("jobExcludeList")]
         public Dictionary<string, bool> JobExcludeList { get; set; } = new Dictionary<string, bool>();
 
