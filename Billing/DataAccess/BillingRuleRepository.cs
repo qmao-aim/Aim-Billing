@@ -171,11 +171,17 @@ namespace Billing.DataAccess
                                     new { workspaceId, app, tier }, tx);
                             }
 
-                            foreach (var tier in appTiers.Values.Distinct().Where(t => t != "Excluded"))
+                            // Legacy puts every app's tier into the same tierInfo dictionary before
+                            // inserting, including "Excluded" (forced to price=0/threshold=0), and
+                            // inserts a tier_info row for every key — "Excluded" is not skipped
+                            // (BillingStatusViewModel.cs:422-446). Matched here.
+                            foreach (var tier in appTiers.Values.Distinct())
                             {
-                                decimal price = rule.SameUnitPrice ? rule.UnitPrice
+                                decimal price = tier == "Excluded" ? 0m
+                                    : rule.SameUnitPrice ? rule.UnitPrice
                                     : (rule.UnitPrices.TryGetValue(tier, out var p) ? p : 0m);
-                                int threshold = rule.SameUnitPrice ? rule.Threshold
+                                int threshold = tier == "Excluded" ? 0
+                                    : rule.SameUnitPrice ? rule.Threshold
                                     : (rule.ThresholdValues.TryGetValue(tier, out var t) ? t : 0);
 
                                 conn.Execute(

@@ -82,8 +82,20 @@ namespace Billing.Controllers
         {
             var token = await UserManager.GeneratePasswordResetTokenAsync(userId);
             var result = await UserManager.ResetPasswordAsync(userId, token, newPassword);
+            if (result.Succeeded)
+            {
+                // The password just set here is temporary by design — flip this so the user
+                // is forced to replace it with one of their own on next login, rather than
+                // going on using a password an Admin knows.
+                var user = await UserManager.FindByIdAsync(userId);
+                if (user != null)
+                {
+                    user.MustChangePassword = true;
+                    await UserManager.UpdateAsync(user);
+                }
+            }
             TempData[result.Succeeded ? "Message" : "Error"] = result.Succeeded
-                ? "Password reset."
+                ? "Password reset. The user must set their own password on next login."
                 : string.Join("; ", result.Errors);
             return RedirectToAction("Index");
         }

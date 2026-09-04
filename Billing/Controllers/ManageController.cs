@@ -39,6 +39,11 @@ namespace Billing.Controllers
                 var user = await UserManager.FindByIdAsync(User.Identity.GetUserId());
                 if (user != null)
                 {
+                    // Cleared before the re-sign-in below so the freshly-issued auth cookie's
+                    // claims (see ApplicationUser.GenerateUserIdentityAsync) reflect this right
+                    // away, rather than only after the user's next separate login.
+                    user.MustChangePassword = false;
+                    await UserManager.UpdateAsync(user);
                     await SignInManager.SignInAsync(user, isPersistent: false, rememberBrowser: false);
                 }
                 ViewBag.StatusMessage = "Your password has been changed.";

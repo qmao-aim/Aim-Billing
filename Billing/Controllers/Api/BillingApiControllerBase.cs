@@ -39,6 +39,18 @@ namespace Billing.Controllers.Api
             }
         }
 
+        // Azure/AI cost data is Admin-only — the SPA hides the page and nav link from
+        // PMs, but (same reasoning as SuffixFor above) that's a UI convenience, not
+        // access control on its own.
+        protected void RequireAdmin()
+        {
+            if (!IsAdmin)
+            {
+                throw new HttpResponseException(Request.CreateResponse(HttpStatusCode.Forbidden,
+                    new { message = "Azure cost data is limited to Admins." }));
+            }
+        }
+
         // A single project/rule always belongs to exactly one real region — "Global"
         // is only meaningful for the aggregate list/dashboard endpoints.
         protected string RequireSpecificRegion(string region)

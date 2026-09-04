@@ -39,6 +39,7 @@ namespace Billing.Services
         {
             { Chat, "Vero" },
             { "Footer", "Detect" },
+            { "PrivLog", "Privilege Narrator" },
         };
 
         public static string GetDisplayName(string appName)

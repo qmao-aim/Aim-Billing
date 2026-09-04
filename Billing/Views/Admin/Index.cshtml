@@ -1,5 +1,12 @@
 @model Billing.ViewModels.AdminIndexViewModel
 @{ ViewBag.Title = "Admin"; }
+<style>
+    /* Widened just for this page — the shared 720px main (_Layout.cshtml) fits
+       Login/Change password fine, but this table has six columns and needs more
+       room. Later in document order than the layout's own <style>, so no
+       !important needed to win the cascade. */
+    main { max-width: 1100px; }
+</style>
 <h1>Users</h1>
 @if (Model.Message != null)
 {
@@ -9,7 +16,8 @@
 {
     <div class="error">@Model.Error</div>
 }
-<table>
+<div style="overflow-x:auto;">
+<table style="min-width:900px;">
     <thead>
         <tr>
             <th>Email</th><th>Role</th><th>Registered</th><th>Approved</th>
@@ -51,7 +59,7 @@
                     {
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="userId" value="@u.Id" />
-                        <input type="text" name="newPassword" placeholder="New password" />
+                        <input type="text" name="newPassword" placeholder="New password" style="width:160px;flex:none;" />
                         <button type="submit">Reset</button>
                     }
                 </td>
@@ -59,3 +67,4 @@
         }
     </tbody>
 </table>
+</div>

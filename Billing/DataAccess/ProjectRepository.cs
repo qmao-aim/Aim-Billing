@@ -97,6 +97,14 @@ namespace Billing.DataAccess
                     $@"SELECT workspaceId, name, matter_number, prod_info, unit_price, is_test, synced_on
                        FROM [dbo].[project{suffix}] WHERE workspaceId > 0 AND {testFilter}").ToList();
 
+                // One aggregate query for every workspace's lifetime tier total, instead of
+                // the query-per-workspace loop this used to run — with ~700 projects in the
+                // US region alone, that loop was the dominant cost of loading this page.
+                var tierTotals = conn.Query(
+                    $@"SELECT [workspaceId] AS WorkspaceId, sum([count]) AS Count, sum([amount]) AS Amount
+                       FROM [dbo].[billing_tier{suffix}] GROUP BY [workspaceId]")
+                    .ToDictionary(r => (int)r.WorkspaceId, r => ((int)(r.Count ?? 0), (decimal)(r.Amount ?? 0m)));
+
                 var result = new List<ProjectInfo>();
                 foreach (var row in rows)
                 {
@@ -113,12 +121,9 @@ namespace Billing.DataAccess
                         SyncedOn = row.synced_on,
                     };
 
-                    var tierTotal = conn.QueryFirstOrDefault(
-                        $@"SELECT sum([count]) AS Count, sum([amount]) AS Amount
-                           FROM [dbo].[billing_tier{suffix}] WHERE [workspaceId] = @workspaceId",
-                        new { workspaceId });
-                    info.TierTotalCount = tierTotal?.Count ?? 0;
-                    info.TierTotalPrice = tierTotal?.Amount ?? 0m;
+                    var tierTotal = tierTotals.TryGetValue(workspaceId, out var t) ? t : (0, 0m);
+                    info.TierTotalCount = tierTotal.Item1;
+                    info.TierTotalPrice = tierTotal.Item2;
 
                     result.Add(info);
                 }

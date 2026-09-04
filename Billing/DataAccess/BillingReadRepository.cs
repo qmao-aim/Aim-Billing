@@ -113,25 +113,34 @@ namespace Billing.DataAccess
             return result;
         }
 
-        // month(1..12) -> (count, amount) summed across all tiers — used for the portfolio list.
-        public Dictionary<int, (int Count, decimal Amount)> GetMonthTierTableForWorkspace(int workspaceId, int year, string region, string suffix)
+        // workspaceId -> month(1..12) -> (count, amount) summed across all tiers, for EVERY
+        // workspace in one batched query — used by the portfolio list (GetProjectsForRegion).
+        // Replaces what used to be a query per workspace with billing activity; with ~700
+        // projects in the US region alone, that loop was the dominant cost of loading the
+        // Projects page.
+        private Dictionary<int, Dictionary<int, (int Count, decimal Amount)>> GetMonthTierTableForAllWorkspaces(int year, string region, string suffix)
         {
             using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 var rows = conn.Query(
-                    $@"SELECT [month] AS Month, sum([count]) AS Count, sum([amount]) AS Amount
-                       FROM [dbo].[billing_tier{suffix}] WHERE workspaceId = @workspaceId AND year = @year
-                       GROUP BY [month]",
-                    new { workspaceId, year });
+                    $@"SELECT [workspaceId] AS WorkspaceId, [month] AS Month, sum([count]) AS Count, sum([amount]) AS Amount
+                       FROM [dbo].[billing_tier{suffix}] WHERE [year] = @year
+                       GROUP BY [workspaceId], [month]",
+                    new { year });
 
-                var result = Enumerable.Range(1, 12).ToDictionary(m => m, m => (0, 0m));
+                var result = new Dictionary<int, Dictionary<int, (int, decimal)>>();
                 foreach (var row in rows)
                 {
+                    int workspaceId = row.WorkspaceId;
                     int month = row.Month;
-                    if (month >= 1 && month <= 12)
+                    if (month < 1 || month > 12) continue;
+
+                    if (!result.TryGetValue(workspaceId, out var monthly))
                     {
-                        result[month] = ((int)(row.Count ?? 0), (decimal)(row.Amount ?? 0m));
+                        monthly = Enumerable.Range(1, 12).ToDictionary(m => m, m => (0, 0m));
+                        result[workspaceId] = monthly;
                     }
+                    monthly[month] = ((int)(row.Count ?? 0), (decimal)(row.Amount ?? 0m));
                 }
                 return result;
             }
@@ -177,6 +186,12 @@ namespace Billing.DataAccess
                 workspaces.AddRange(_projects.GetProjectsInfo(true, region, suffix));
             }
 
+            // One batched query for every workspace's monthly breakdown, instead of a query
+            // per workspace with billing activity — see GetMonthTierTableForAllWorkspaces.
+            var monthlyByWorkspace = year.HasValue
+                ? GetMonthTierTableForAllWorkspaces(year.Value, region, suffix)
+                : null;
+
             var rows = new List<AnalyzedTimeInfo>();
             foreach (var ws in workspaces)
             {
@@ -186,9 +201,15 @@ namespace Billing.DataAccess
 
                 if (ws.TierTotalCount > 0 && year.HasValue)
                 {
-                    var monthTable = GetMonthTierTableForWorkspace(ws.WorkspaceId, year.Value, region, suffix);
-                    counts = Enumerable.Range(1, 12).Select(m => monthTable[m].Count).ToList();
-                    money = Enumerable.Range(1, 12).Select(m => monthTable[m].Amount).ToList();
+                    // A workspace can be absent from the batch (no billing_tier rows in this
+                    // specific year, even though it has lifetime activity from other years) —
+                    // counts/money then keep their zero defaults above, matching what the old
+                    // per-workspace call would have returned for the same case.
+                    if (monthlyByWorkspace.TryGetValue(ws.WorkspaceId, out var monthTable))
+                    {
+                        counts = Enumerable.Range(1, 12).Select(m => monthTable[m].Count).ToList();
+                        money = Enumerable.Range(1, 12).Select(m => monthTable[m].Amount).ToList();
+                    }
                     yearCount = counts.Sum();
                 }
 
@@ -236,6 +257,7 @@ namespace Billing.DataAccess
                 row.Region = region;
                 row.WorkspaceId = workspaceId;
                 row.JobName = app;
+                row.IsAppRow = true;
                 row.TotalCount = totalCount;
                 row.Counts = monthCounts;
                 row.YearCount = monthCounts.Sum();
@@ -244,27 +266,41 @@ namespace Billing.DataAccess
                 appRows[app] = row;
             }
 
-            var otherRows = new List<AnalyzedTimeInfo>();
+            // Grouped display order matching legacy's GetAnalyzedTimeMonthTable: an
+            // "All Tiers" header (when more than one tier is in play), then each tier's
+            // subtotal row immediately followed by its member apps, then an "Excluded
+            // Tier" header followed by explicitly-excluded apps and any app that was
+            // never assigned a tier at all (e.g. DeDupe/Thread, which the rule engine
+            // never manages) — legacy's "undefined jobs, such as detect" case.
+            var groupedRows = new List<AnalyzedTimeInfo>();
             // Only the genuine per-tier rows — excludes the "All Tiers"/"Excluded Tier"
             // synthetic headers, which would otherwise double-count when summing money
             // for the "All applications" row below.
             var tierMoneyRows = new List<AnalyzedTimeInfo>();
+            var placedApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (project.IsDefined != -1)
             {
                 var tierCounts = GetMonthTierCountsForWorkspace(workspaceId, year, project, region, suffix);
-                var tiers = tierCounts.Keys.OrderBy(t => t).ToList();
+                // Vero/Chat's dedicated tier is sorted after every generic tier (but still
+                // before the "Excluded Tier" bucket below) rather than wherever it happens
+                // to fall alphabetically — it's a different kind of billing (period-based,
+                // not threshold-based) and reads better grouped apart from Tier_0..Tier_N.
+                var tiers = tierCounts.Keys
+                    .OrderBy(t => t.Equals("Chat", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                    .ThenBy(t => t, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
                 if (tiers.Count > 1)
                 {
-                    otherRows.Add(BuildTierRow(workspaceId, "All Tiers", tierCounts.Values, -1, 0));
+                    groupedRows.Add(BuildTierRow(workspaceId, "All Tiers", tierCounts.Values, -1, 0));
                 }
                 foreach (var tier in tiers)
                 {
                     decimal rate = project.UnitRates.TryGetValue(tier, out var r) ? r : 0m;
                     int threshold = project.Thresholds.TryGetValue(tier, out var th) ? th : 0;
                     var tierRow = BuildTierRow(workspaceId, tier, new[] { tierCounts[tier] }, rate, threshold);
-                    otherRows.Add(tierRow);
+                    groupedRows.Add(tierRow);
                     tierMoneyRows.Add(tierRow);
 
                     foreach (var app in appRows.Keys.ToList())
@@ -274,20 +310,21 @@ namespace Billing.DataAccess
                         {
                             appRows[app].JobUnitRate = rate;
                             appRows[app].JobThreshold = threshold;
+                            groupedRows.Add(appRows[app]);
+                            placedApps.Add(app);
                         }
                     }
                 }
 
-                if (project.ExcludeList.Values.Any(v => v))
+                var leftoverApps = appRows.Keys.Where(a => !placedApps.Contains(a)).ToList();
+                if (leftoverApps.Count > 0)
                 {
-                    otherRows.Add(BuildTierRow(workspaceId, "Excluded Tier", new Dictionary<int, (int, decimal)>[0], 0, 0));
-                    foreach (var app in appRows.Keys.ToList())
+                    groupedRows.Add(BuildTierRow(workspaceId, "Excluded Tier", new Dictionary<int, (int, decimal)>[0], 0, 0));
+                    foreach (var app in leftoverApps)
                     {
-                        if (project.ExcludeList.TryGetValue(app, out var excluded) && excluded)
-                        {
-                            appRows[app].JobUnitRate = 0;
-                            appRows[app].JobThreshold = 0;
-                        }
+                        appRows[app].JobUnitRate = 0;
+                        appRows[app].JobThreshold = 0;
+                        groupedRows.Add(appRows[app]);
                     }
                 }
             }
@@ -313,14 +350,12 @@ namespace Billing.DataAccess
             };
             allAppsRow.YearCount = allAppsRow.Counts.Sum();
 
-            // The SPA's contract is exactly "All applications" + one row per real
-            // application (README: "one row per application ... PLUS a synthetic
-            // row") — the tier-summary rows built above (otherRows) are only used
-            // internally, to compute allAppsRow's ground-truth money above; they
-            // are not part of the wire shape and would otherwise show up as bogus
-            // "applications" named "Tier_1"/"All Tiers"/"Excluded Tier" in the UI.
+            // "All applications" first, then the tier-grouped breakdown (tier header
+            // rows interleaved with their member apps, matching legacy's on-screen
+            // grouping) — or, when no rule is defined yet, the raw per-app rows with
+            // no tier framing at all, since there's nothing to group by.
             var result = new List<AnalyzedTimeInfo> { allAppsRow };
-            result.AddRange(appRows.Values);
+            result.AddRange(project.IsDefined != -1 ? groupedRows : (IEnumerable<AnalyzedTimeInfo>)appRows.Values);
             return result;
         }
 

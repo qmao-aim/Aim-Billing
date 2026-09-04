@@ -149,22 +149,26 @@
     <Compile Include="Controllers\AdminController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\ManageController.cs" />
+    <Compile Include="Controllers\Api\AiCostController.cs" />
     <Compile Include="Controllers\Api\BillingApiControllerBase.cs" />
     <Compile Include="Controllers\Api\BillingRuleController.cs" />
     <Compile Include="Controllers\Api\ConnectionStatusController.cs" />
     <Compile Include="Controllers\Api\DashboardController.cs" />
     <Compile Include="Controllers\Api\ProjectsController.cs" />
     <Compile Include="Controllers\Api\SessionController.cs" />
+    <Compile Include="DataAccess\AiCostRepository.cs" />
     <Compile Include="DataAccess\BillingDbConnectionFactory.cs" />
     <Compile Include="DataAccess\BillingReadRepository.cs" />
     <Compile Include="DataAccess\BillingRuleRepository.cs" />
     <Compile Include="DataAccess\DashboardRepository.cs" />
     <Compile Include="DataAccess\ProjectRepository.cs" />
+    <Compile Include="Filters\MustChangePasswordFilter.cs" />
     <Compile Include="Filters\RoleGateApiFilter.cs" />
     <Compile Include="Filters\RoleGateFilter.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Models\AiCostModels.cs" />
     <Compile Include="Models\AnalyzedTimeInfo.cs" />
     <Compile Include="Models\ApiModels.cs" />
     <Compile Include="Models\BillingRule.cs" />
@@ -205,6 +209,20 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">15.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
+  <!-- Must be set BEFORE Microsoft.WebApplication.targets/Microsoft.Web.Publishing.targets
+       are imported below, not after: PipelineCollectFilesPhaseDependsOn (defined in the
+       latter) bakes in whatever value $(OnBeforePipelineCollectFilesPhase) has AT IMPORT
+       TIME as a fixed string — it is not a live reference re-read later. Appending to this
+       property after the import (as this project used to, and as BeforeTargets="Publish"
+       on BuildFrontend also failed to work around) has no effect at all: confirmed by
+       publishing and finding build-frontend.ps1 never ran and Billing-SPA came up empty in
+       the output while Views/ copied fine. See BuildFrontend below for what this wires up. -->
+  <PropertyGroup>
+    <OnBeforePipelineCollectFilesPhase>
+      $(OnBeforePipelineCollectFilesPhase);
+      BuildFrontend;
+    </OnBeforePipelineCollectFilesPhase>
+  </PropertyGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v10.0\WebApplications\Microsoft.WebApplication.targets" Condition="false" />
@@ -218,9 +236,11 @@
        this target, not at the top level, specifically so MSBuild scans the folder
        AFTER the script has regenerated it — a top-level wildcard is evaluated once
        when the project loads, before this target ever runs, and would still see
-       the previous build's file list.
+       the previous build's file list. Wired into the publish pipeline via
+       $(OnBeforePipelineCollectFilesPhase) above, not BeforeTargets here — see that
+       comment for why BeforeTargets="Publish" alone does not work.
        NOTE: requires Node.js/npm on whatever machine runs Publish. -->
-  <Target Name="BuildFrontend" BeforeTargets="Publish">
+  <Target Name="BuildFrontend">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build-frontend.ps1&quot;" />
     <ItemGroup>
       <Content Include="Billing-SPA\**\*.*" />

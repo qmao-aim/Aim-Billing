@@ -18,6 +18,14 @@ namespace Billing.Models
         public string ProdType { get; set; }
         public decimal UnitPrice { get; set; }
         public string JobName { get; set; }
+
+        // Not part of the legacy JSON shape — added so the SPA can tell a genuine
+        // per-application row apart from a synthetic grouping row ("All applications",
+        // "All Tiers", a "Tier_N"/"Excluded Tier" header) without guessing from JobName
+        // text. Needed because a tier can be literally named "Chat" (Vero's dedicated
+        // tier) — identical to the real "Chat" app row's JobName — so string matching
+        // alone can't disambiguate them.
+        public bool IsAppRow { get; set; }
         public int TotalCount { get; set; }
         public int TotalBillCount { get; set; }
         public decimal TotalPrice { get; set; }
