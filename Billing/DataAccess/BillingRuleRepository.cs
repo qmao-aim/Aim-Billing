@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Dapper;
+using Newtonsoft.Json;
 using Billing.Models;
 using Billing.Services;
 
@@ -21,15 +23,56 @@ namespace Billing.DataAccess
 
             // For a project with no rule yet, ProjectRepository leaves the tier maps
             // empty (there's nothing in app_tier/tier_info to read). The rule-editing
-            // form needs a sensible starting point, not empty maps — every app starts
-            // unassigned/in the default tier, matching the write path's own "Tier_0"
-            // default in BillingRuleRepository.SaveRule.
+            // form needs a sensible starting point, not empty maps — so a brand-new rule
+            // starts pre-filled with the org's usual tier/exclusion/rate pattern (an
+            // Admin-requested default, not a fixed business rule). The form itself warns
+            // this is only a suggestion and must be confirmed or adjusted before saving —
+            // see the "Default ... shown" text in BillingRule.tsx.
             var jobExcludeList = project.ExcludeList;
             var jobGroupList = project.JobGroupList;
+            var unitPrices = project.UnitRates;
+            var thresholdValues = project.Thresholds;
+            bool isAppExcluded = project.HasExclude;
+            bool sameUnitPrice = project.SingleUnitRate;
+            // Not project.VeroExceptionReason: a workspace unlocked back to "undefined" for
+            // re-testing (or genuinely re-opened) still has its PRIOR submission's reason
+            // sitting in this column — SaveRule never clears it on its own, since a rule is
+            // normally write-once and this column is only ever touched by that one write.
+            // A fresh rule form must not show a stale reason left over from a past attempt.
+            string veroExceptionReason = project.VeroExceptionReason;
+
             if (project.IsDefined == -1)
             {
-                jobExcludeList = AppMetadata.RuleEngineApps.ToDictionary(a => a, _ => false);
-                jobGroupList = AppMetadata.RuleEngineApps.ToDictionary(a => a, _ => "Tier_1");
+                veroExceptionReason = null;
+                isAppExcluded = true;
+                var defaultExcluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    { "TextCluster", "Expand", "Explore", "Sentimize", "Emoji", "Footer" };
+                jobExcludeList = AppMetadata.RuleEngineApps.ToDictionary(a => a, a => defaultExcluded.Contains(a));
+
+                sameUnitPrice = false;
+                var defaultTiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "TextPredict", "Tier_1" },
+                    { "ImagePredict", "Tier_2" },
+                    { "ImageCluster", "Tier_2" },
+                    { "Privilege", "Tier_3" },
+                    { "Mine", "Tier_1" },
+                    { "ConstructionPredict", "Tier_1" },
+                    { "PrivLog", "Tier_4" },
+                };
+                // Excluded apps get no meaningful tier assignment — the form never shows
+                // one for them — so "Tier_1" here is just a harmless placeholder.
+                jobGroupList = AppMetadata.RuleEngineApps.ToDictionary(
+                    a => a, a => defaultTiers.TryGetValue(a, out var t) ? t : "Tier_1");
+
+                unitPrices = new Dictionary<string, decimal>
+                {
+                    { "Tier_1", 0.03m }, { "Tier_2", 0.05m }, { "Tier_3", 0.10m }, { "Tier_4", 1.00m },
+                };
+                thresholdValues = new Dictionary<string, int>
+                {
+                    { "Tier_1", 0 }, { "Tier_2", 0 }, { "Tier_3", 0 }, { "Tier_4", 0 },
+                };
             }
 
             return new BillingRule
@@ -38,18 +81,19 @@ namespace Billing.DataAccess
                 WorkspaceName = project.Name,
                 IsDefined = project.IsDefined,
                 IsTest = project.IsDefined == 1,
-                IsAppExcluded = project.HasExclude,
-                SameUnitPrice = project.SingleUnitRate,
+                IsAppExcluded = isAppExcluded,
+                SameUnitPrice = sameUnitPrice,
                 UnitPrice = project.UnitPrice,
                 Threshold = project.UnitThreshold,
                 // Legacy's undefined-rule constructor defaults to 0.1/3 — matched here so a
                 // brand-new rule form starts with the same suggested values (BillingStatusViewModel.cs:198-199).
                 ChatUnitPrice = project.ChatUnitPrice ?? 0.1m,
                 ChatPeriod = project.ChatPeriod ?? 3,
+                VeroExceptionReason = veroExceptionReason,
                 JobExcludeList = jobExcludeList,
                 JobGroupList = jobGroupList,
-                UnitPrices = project.UnitRates,
-                ThresholdValues = project.Thresholds,
+                UnitPrices = unitPrices,
+                ThresholdValues = thresholdValues,
                 CreatedBy = project.CreatedBy,
                 CreatedOn = project.CreatedOn,
             };
@@ -82,6 +126,10 @@ namespace Billing.DataAccess
                 {
                     return SaveRuleResult.Failure("Vero period must be non-negative (0 disables Vero billing).");
                 }
+                if ((rule.ChatUnitPrice == 0 || rule.ChatPeriod == 0) && string.IsNullOrWhiteSpace(rule.VeroExceptionReason))
+                {
+                    return SaveRuleResult.Failure("A reason is required when the Vero unit price or period is zero.");
+                }
                 if (rule.IsAppExcluded && !rule.JobExcludeList.Values.Any(v => v))
                 {
                     return SaveRuleResult.Failure("At least one application must be excluded.");
@@ -103,6 +151,12 @@ namespace Billing.DataAccess
                 }
             }
 
+            // Only recorded when the exception actually applies (Vero effectively off) — a
+            // test workspace, or a billable one with a real Vero rate/period, stores NULL.
+            string veroExceptionReasonJson = !rule.IsTest && (rule.ChatUnitPrice == 0 || rule.ChatPeriod == 0)
+                ? JsonConvert.SerializeObject(new Dictionary<string, string> { [savedByEmail] = rule.VeroExceptionReason })
+                : null;
+
             using (var conn = BillingDbConnectionFactory.Create(region))
             {
                 conn.Open();
@@ -122,10 +176,10 @@ namespace Billing.DataAccess
                             conn.Execute(
                                 $@"UPDATE [dbo].[project{suffix}] SET [is_test] = 1, [singleRate] = 1,
                                    [has_exclude] = 0, [unit_price] = 0.00, [unit_threshold] = 0,
-                                   [chat_unit_price] = 0.00, [chat_period] = 0,
+                                   [chat_unit_price] = 0.00, [chat_period] = 0, [vero_exception_reason] = @veroExceptionReasonJson,
                                    [created_by] = @savedByEmail, [created_on] = GETUTCDATE()
                                    WHERE [workspaceId] = @workspaceId",
-                                new { workspaceId, savedByEmail }, tx);
+                                new { workspaceId, savedByEmail, veroExceptionReasonJson }, tx);
                         }
                         else
                         {
@@ -133,6 +187,7 @@ namespace Billing.DataAccess
                                 $@"UPDATE [dbo].[project{suffix}] SET [is_test] = 0, [singleRate] = @sameUnitPrice,
                                    [has_exclude] = @isAppExcluded, [unit_price] = @unitPrice, [unit_threshold] = @threshold,
                                    [chat_unit_price] = @chatUnitPrice, [chat_period] = @chatPeriod,
+                                   [vero_exception_reason] = @veroExceptionReasonJson,
                                    [created_by] = @savedByEmail, [created_on] = GETUTCDATE()
                                    WHERE [workspaceId] = @workspaceId",
                                 new
@@ -144,6 +199,7 @@ namespace Billing.DataAccess
                                     threshold = rule.Threshold,
                                     chatUnitPrice = rule.ChatUnitPrice,
                                     chatPeriod = rule.ChatPeriod,
+                                    veroExceptionReasonJson,
                                     savedByEmail,
                                 }, tx);
 

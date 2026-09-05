@@ -20,6 +20,10 @@ namespace Billing.Models
         public bool SingleUnitRate { get; set; } = true;
         public decimal? ChatUnitPrice { get; set; }
         public int? ChatPeriod { get; set; }
+        // JSON-encoded {"<email>": "<reason>"} — required when ChatUnitPrice or ChatPeriod
+        // is 0 (Vero billing effectively off for this workspace), so there's a record of
+        // who signed off on the exception and why. Null/empty otherwise.
+        public string VeroExceptionReason { get; set; }
         public string CreatedBy { get; set; }
         public DateTime? CreatedOn { get; set; }
         public DateTime? SyncedOn { get; set; }

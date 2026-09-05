@@ -18,7 +18,7 @@ namespace Billing.DataAccess
             {
                 var row = conn.QueryFirstOrDefault(
                     $@"SELECT workspaceId, name, matter_number, prod_info, unit_price, unit_threshold, is_test,
-                              has_exclude, singleRate, chat_unit_price, chat_period, synced_on,
+                              has_exclude, singleRate, chat_unit_price, chat_period, vero_exception_reason, synced_on,
                               created_by, created_on
                        FROM [dbo].[project{suffix}] WHERE [workspaceId] = @workspaceId",
                     new { workspaceId });
@@ -39,6 +39,7 @@ namespace Billing.DataAccess
                     SingleUnitRate = row.singleRate ?? true,
                     ChatUnitPrice = row.chat_unit_price,
                     ChatPeriod = row.chat_period,
+                    VeroExceptionReason = row.vero_exception_reason,
                     SyncedOn = row.synced_on,
                     CreatedBy = row.created_by,
                     CreatedOn = row.created_on,

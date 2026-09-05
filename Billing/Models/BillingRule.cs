@@ -41,6 +41,13 @@ namespace Billing.Models
         [JsonProperty("chatPeriod")]
         public int ChatPeriod { get; set; }
 
+        // On save: plain reason text the Admin typed (required when ChatUnitPrice or
+        // ChatPeriod is 0), which SaveRule wraps into {"<savedByEmail>": "<reason>"} before
+        // storing. On read: that same JSON string once set, for the locked summary to show
+        // who signed off on the exception and why. Never populated for a test workspace.
+        [JsonProperty("veroExceptionReason")]
+        public string VeroExceptionReason { get; set; }
+
         [JsonProperty("jobExcludeList")]
         public Dictionary<string, bool> JobExcludeList { get; set; } = new Dictionary<string, bool>();
 
