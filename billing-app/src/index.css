@@ -1,0 +1,107 @@
+@import './styles/fonts.css';
+@import './styles/vero-tokens.css';
+@import 'tailwindcss';
+
+/* Map the Vero semantic layer into Tailwind's theme so utilities read as
+ * design intent (bg-surface, text-secondary, border-default) rather than as
+ * raw hexes scattered through components. */
+@theme {
+  --color-bg: var(--vero-bg);
+  --color-surface: var(--vero-surface);
+  --color-surface-muted: var(--vero-surface-muted);
+
+  --color-primary: var(--vero-text-primary);
+  --color-secondary: var(--vero-text-secondary);
+  --color-muted: var(--vero-text-muted);
+  --color-on-action: var(--vero-text-on-action);
+
+  --color-action: var(--vero-action);
+  --color-action-hover: var(--vero-action-hover);
+  --color-action-wash: var(--vero-blue-25);
+  --color-action-tint: var(--vero-blue-50);
+  --color-link: var(--vero-link);
+
+  --color-default: var(--vero-border);
+  --color-divider: var(--vero-divider);
+
+  --color-success: var(--vero-status-success);
+  --color-success-bg: var(--vero-status-success-bg);
+  --color-warning: var(--vero-status-warning);
+  --color-warning-bg: var(--vero-status-warning-bg);
+  --color-danger: var(--vero-status-error);
+  --color-danger-bg: var(--vero-status-error-bg);
+  --color-info: var(--vero-status-info);
+  --color-info-bg: var(--vero-status-info-bg);
+
+  --color-chrome-start: var(--vero-chrome-start);
+  --color-chrome-end: var(--vero-chrome-end);
+  --color-on-chrome: var(--vero-on-chrome);
+  --color-on-chrome-muted: var(--vero-on-chrome-muted);
+  --color-footer: var(--vero-footer-bg);
+  --color-footer-text: var(--vero-footer-text);
+  --color-footer-link: var(--vero-footer-link);
+
+  --font-display: 'Quicksand', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'SF Mono', Consolas, 'Liberation Mono', monospace;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-modal: 14px;
+
+  --shadow-e1: 0 1px 2px rgba(34, 40, 49, 0.06), 0 1px 3px rgba(34, 40, 49, 0.1);
+  --shadow-e2: 0 2px 6px rgba(34, 40, 49, 0.08), 0 4px 12px rgba(34, 40, 49, 0.08);
+  --shadow-e3: 0 8px 24px rgba(34, 40, 49, 0.12);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--vero-bg);
+    color: var(--vero-text-primary);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Display face is for headings only. Sizes are set per-use. */
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  h4, h5, h6 { margin: 0; font-weight: 600; }
+  p { margin: 0; }
+
+  /* Focus is the single most important accessibility behaviour in this system:
+   * a 2px action-coloured ring with a 2px offset, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--vero-focus-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Tabular figures everywhere numbers are compared down a column. */
+  table { font-variant-numeric: tabular-nums; }
+}
+
+@layer utilities {
+  .chrome-gradient { background-image: var(--vero-chrome-gradient); }
+  .num { font-variant-numeric: tabular-nums; }
+}
+
+/* Screen-reader-only text that becomes visible on focus (skip link). */
+.sr-only:not(:focus):not(:active) {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

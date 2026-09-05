@@ -1,0 +1,128 @@
+/* Vero design tokens — Legal Analytics Suite.
+ *
+ * Raw palette + semantic layer. Components read the SEMANTIC tokens only.
+ * Do not fork this palette per app: the suite is one look, and apps differ
+ * only by name and logo wordmark.
+ *
+ * Light theme only in this build — see spec §11.2. Every production
+ * screenshot supplied was the Light theme, so there is no reference to
+ * match dark against, and the theme toggle is omitted rather than shown
+ * inert.
+ */
+
+:root {
+  /* ---- Blue ramp — ACTION color ---- */
+  --vero-blue-25:  #F4F6F9;
+  --vero-blue-50:  #E7ECF2;
+  --vero-blue-100: #CEDAE4;
+  --vero-blue-200: #AEC0D2;
+  --vero-blue-300: #8DA8C0;
+  --vero-blue-400: #7495B2;
+  --vero-blue-500: #5C82A5; /* identity hue — large/bold only */
+  --vero-blue-600: #486784; /* PRIMARY action, links, focus — 5.92:1 on white */
+  --vero-blue-700: #38516A; /* hover / pressed */
+  --vero-blue-800: #2F475D;
+  --vero-blue-900: #233649;
+
+  /* ---- Teal — CHROME only in this app ----
+   * In production, teal is earned exclusively by the AI-search / discovery
+   * mode. Billing has no AI surface, so teal appears nowhere here except
+   * the chrome gradient and the footer info link. See spec §5.2. */
+  --vero-teal-500: #3E8778;
+  --vero-teal-600: #2F6659;
+
+  /* ---- Brand identity — ORANGE. Logo only, never a UI control color. ---- */
+  --vero-orange-500: #DE8436;
+
+  /* ---- Cool neutrals ---- */
+  --vero-neutral-0:   #FFFFFF;
+  --vero-neutral-25:  #F7F8FA; /* app background */
+  --vero-neutral-50:  #F2F4F6;
+  --vero-neutral-100: #E6E9ED;
+  --vero-neutral-200: #D2D7DD;
+  --vero-neutral-300: #B4BCC4;
+  --vero-neutral-400: #8A949C; /* large text / non-text only */
+  --vero-neutral-500: #5A6770; /* secondary text */
+  --vero-neutral-700: #374049;
+  --vero-neutral-900: #222222; /* primary text */
+
+  /* ---- Semantics ---- */
+  --vero-success: #1E7A4A; --vero-success-bg: #E6F2EC;
+  --vero-warning: #B45309; --vero-warning-bg: #FBF0E2;
+  --vero-error:   #B42318; --vero-error-bg:   #FBEAE8;
+  --vero-info:    #486784; --vero-info-bg:    #E7ECF2;
+
+  /* ---- Chrome ----
+   * Colors MEASURED from the production header (header_gradient.png, 1920x108),
+   * not taken from the design-system doc, which is off by up to ~5 points per
+   * channel. The 50% stop is required: a plain two-stop gradient interpolates
+   * to #295350 at centre where the real bar is #2A5753.
+   *
+   * Direction runs light-to-dark (left to right) — reversed from the original
+   * measured (dark-to-light) production header at this app's request.
+   *
+   * CONTRAST CONSTRAINT (flipped along with the direction): white text now
+   * runs ~4.41:1 at the LEFT edge, rising to 16.42:1 at the right — the low
+   * end still fails AA for normal-size text, but passes for large/bold text
+   * (>=3:1), which is what actually sits there (the Wordmark). Keep any
+   * small bare-text controls clear of the left band, same rule as before
+   * just mirrored. See spec §5.1.
+   */
+  --vero-chrome-start: #142129;
+  --vero-chrome-mid:   #2A5753;
+  --vero-chrome-end:   #3D8476;
+  --vero-chrome-gradient: linear-gradient(
+    90deg,
+    var(--vero-chrome-end) 0%,
+    var(--vero-chrome-mid) 50%,
+    var(--vero-chrome-start) 100%
+  );
+  --vero-on-chrome:       #FFFFFF;
+  --vero-on-chrome-muted: #C9D6D2;
+  --vero-footer-bg:   #505555;
+  --vero-footer-text: #D7D7D7;
+  --vero-footer-link: #6FB3A5;
+
+  /* ---- Semantic layer ---- */
+  --vero-bg:               var(--vero-neutral-25);
+  --vero-surface:          var(--vero-neutral-0);
+  --vero-surface-muted:    var(--vero-neutral-50);
+  --vero-surface-elevated: var(--vero-neutral-0);
+
+  --vero-text-primary:   var(--vero-neutral-900);
+  --vero-text-secondary: var(--vero-neutral-500);
+  --vero-text-muted:     var(--vero-neutral-400);
+  --vero-text-on-action: var(--vero-neutral-0);
+
+  --vero-action:       var(--vero-blue-600);
+  --vero-action-hover: var(--vero-blue-700);
+  --vero-link:         var(--vero-blue-600);
+  --vero-focus-ring:   var(--vero-blue-600);
+
+  --vero-border:  var(--vero-neutral-200);
+  --vero-divider: var(--vero-neutral-100);
+
+  --vero-status-success: var(--vero-success); --vero-status-success-bg: var(--vero-success-bg);
+  --vero-status-warning: var(--vero-warning); --vero-status-warning-bg: var(--vero-warning-bg);
+  --vero-status-error:   var(--vero-error);   --vero-status-error-bg:   var(--vero-error-bg);
+  --vero-status-info:    var(--vero-info);    --vero-status-info-bg:    var(--vero-info-bg);
+
+  /* ---- Elevation ---- */
+  --vero-shadow-1: 0 1px 2px rgba(34,40,49,0.06), 0 1px 3px rgba(34,40,49,0.10);
+  --vero-shadow-2: 0 2px 6px rgba(34,40,49,0.08), 0 4px 12px rgba(34,40,49,0.08);
+  --vero-shadow-3: 0 8px 24px rgba(34,40,49,0.12);
+
+  /* ---- Motion ---- */
+  --vero-duration-state:   120ms;
+  --vero-duration-enter:   180ms;
+  --vero-duration-overlay: 240ms;
+  --vero-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vero-duration-state: 0ms;
+    --vero-duration-enter: 0ms;
+    --vero-duration-overlay: 0ms;
+  }
+}

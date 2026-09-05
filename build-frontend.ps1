@@ -14,16 +14,16 @@
     task only notices a failure via the process exit code, not the error text.
 
 .PARAMETER FrontendPath
-    Path to the billing-app frontend repo checkout. Defaults to where it lives
-    on this machine today; pass -FrontendPath if your checkout is elsewhere
-    (e.g. a different machine, or after the repos are split apart).
+    Path to the billing-app frontend source. Defaults to the billing-app/ folder
+    living alongside this script (both are part of the same Aim-Billing repo);
+    pass -FrontendPath if your checkout puts it somewhere else.
 
 .EXAMPLE
     .\build-frontend.ps1
     .\build-frontend.ps1 -FrontendPath "D:\repos\billing-app"
 #>
 param(
-    [string]$FrontendPath = "C:\Projects\billing-app-source\billing-app"
+    [string]$FrontendPath = (Join-Path $PSScriptRoot "billing-app")
 )
 
 $ErrorActionPreference = "Stop"
