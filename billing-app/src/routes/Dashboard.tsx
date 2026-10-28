@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { ErrorBlock, Skeleton } from '@/components/ui/States'
 import { RevenueTrend } from '@/components/charts/RevenueTrend'
 import { RankedBar } from '@/components/charts/RankedBar'
+import { FinancialReport } from '@/components/dashboard/FinancialReport'
 
 /* Admin landing.
  *
@@ -174,6 +175,8 @@ export function Dashboard() {
           />
         )}
       </div>
+
+      <FinancialReport region={region} />
     </div>
   )
 }

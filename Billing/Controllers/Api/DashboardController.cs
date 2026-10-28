@@ -35,5 +35,17 @@ namespace Billing.Controllers.Api
             string normalizedRegion = NormalizeRegion(region);
             return Ok(_repo.GetRateDistribution(normalizedRegion, suffix));
         }
+
+        // Admin-only, like the AI-cost endpoints — this is per-workspace dollar detail
+        // meant for Finance, not something a PM's own project view needs to expose.
+        [HttpGet]
+        [Route("financial-report")]
+        public IHttpActionResult GetFinancialReport(string env, string region, int year, int month)
+        {
+            RequireAdmin();
+            string suffix = SuffixFor(env);
+            string normalizedRegion = NormalizeRegion(region);
+            return Ok(_repo.GetFinancialReport(year, month, normalizedRegion, suffix));
+        }
     }
 }

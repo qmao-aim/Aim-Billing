@@ -71,6 +71,36 @@ namespace Billing.Models
         public long Documents { get; set; }
     }
 
+    // One tier's billed activity for one workspace in one specific month — the
+    // Financial Report panel on the dashboard. A workspace with N billed tiers
+    // that month (e.g. two generic tiers plus Vero) produces N rows.
+    public class FinancialReportRow
+    {
+        [JsonProperty("region")]
+        public string Region { get; set; }
+
+        [JsonProperty("workspaceId")]
+        public int WorkspaceId { get; set; }
+
+        [JsonProperty("workspaceName")]
+        public string WorkspaceName { get; set; }
+
+        [JsonProperty("matterNumber")]
+        public string MatterNumber { get; set; }
+
+        [JsonProperty("applications")]
+        public List<string> Applications { get; set; } = new List<string>();
+
+        [JsonProperty("docCount")]
+        public int DocCount { get; set; }
+
+        [JsonProperty("dollarAmount")]
+        public decimal DollarAmount { get; set; }
+
+        [JsonProperty("unitPrice")]
+        public decimal UnitPrice { get; set; }
+    }
+
     public class SessionInfo
     {
         [JsonProperty("role")]

@@ -559,6 +559,74 @@ function RuleForm({
                     </div>
                   </fieldset>
 
+                  <fieldset>
+                    <legend className="text-[15px] font-semibold text-primary">
+                      Vero billing rule
+                    </legend>
+                    <p className="mt-1 text-[13px] leading-5 text-secondary">
+                      Each Vero index is charged (document count × unit price) the month it&apos;s
+                      created, then again every period below for as long as it&apos;s still
+                      active. A period of 0 disables Vero billing for this workspace.
+                    </p>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                      <Field
+                        label="Vero unit rate"
+                        hint="Charged per document, per billing cycle."
+                        error={touched ? errors.chatUnitPrice : undefined}
+                        required
+                      >
+                        {(id, describedBy) => (
+                          <RateInput
+                            id={id}
+                            describedBy={describedBy}
+                            value={rule.chatUnitPrice}
+                            onChange={(n) => patch({ chatUnitPrice: n ?? 0 })}
+                          />
+                        )}
+                      </Field>
+                      <Field
+                        label="Vero period (months)"
+                        hint="How often an active index is re-billed. Zero disables Vero billing."
+                        error={touched ? errors.chatPeriod : undefined}
+                        required
+                      >
+                        {(id, describedBy) => (
+                          <Input
+                            id={id}
+                            aria-describedby={describedBy}
+                            type="number"
+                            min={0}
+                            max={120}
+                            step={1}
+                            value={rule.chatPeriod}
+                            onChange={(e) => patch({ chatPeriod: Number(e.target.value) })}
+                          />
+                        )}
+                      </Field>
+                    </div>
+
+                    {(rule.chatUnitPrice === 0 || rule.chatPeriod === 0) && (
+                      <div className="mt-4">
+                        <Field
+                          label="Vero Billing Exception Reason"
+                          hint="Required because the Vero unit price or period above is zero."
+                          error={touched ? errors.veroExceptionReason : undefined}
+                          required
+                        >
+                          {(id, describedBy) => (
+                            <Textarea
+                              id={id}
+                              aria-describedby={describedBy}
+                              rows={2}
+                              value={rule.veroExceptionReason ?? ''}
+                              onChange={(e) => patch({ veroExceptionReason: e.target.value })}
+                            />
+                          )}
+                        </Field>
+                      </div>
+                    )}
+                  </fieldset>
+
                   {rule.sameUnitPrice ? (
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field
@@ -597,7 +665,7 @@ function RuleForm({
                   ) : (
                     <div className="space-y-5">
                       <div>
-                        <Label>Assign each application to a tier</Label>
+                        <Label>Assign each application (except Vero) to a tier</Label>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           {activeApps.map((app) => (
                             <label key={app} className="flex items-center gap-3">
@@ -679,74 +747,6 @@ function RuleForm({
                       </div>
                     </div>
                   )}
-
-                  <fieldset>
-                    <legend className="text-[15px] font-semibold text-primary">
-                      Vero billing rule
-                    </legend>
-                    <p className="mt-1 text-[13px] leading-5 text-secondary">
-                      Each Vero index is charged (document count × unit price) the month it&apos;s
-                      created, then again every period below for as long as it&apos;s still
-                      active. A period of 0 disables Vero billing for this workspace.
-                    </p>
-                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                      <Field
-                        label="Vero unit rate"
-                        hint="Charged per document, per billing cycle."
-                        error={touched ? errors.chatUnitPrice : undefined}
-                        required
-                      >
-                        {(id, describedBy) => (
-                          <RateInput
-                            id={id}
-                            describedBy={describedBy}
-                            value={rule.chatUnitPrice}
-                            onChange={(n) => patch({ chatUnitPrice: n ?? 0 })}
-                          />
-                        )}
-                      </Field>
-                      <Field
-                        label="Vero period (months)"
-                        hint="How often an active index is re-billed. Zero disables Vero billing."
-                        error={touched ? errors.chatPeriod : undefined}
-                        required
-                      >
-                        {(id, describedBy) => (
-                          <Input
-                            id={id}
-                            aria-describedby={describedBy}
-                            type="number"
-                            min={0}
-                            max={120}
-                            step={1}
-                            value={rule.chatPeriod}
-                            onChange={(e) => patch({ chatPeriod: Number(e.target.value) })}
-                          />
-                        )}
-                      </Field>
-                    </div>
-
-                    {(rule.chatUnitPrice === 0 || rule.chatPeriod === 0) && (
-                      <div className="mt-4">
-                        <Field
-                          label="Vero Billing Exception Reason"
-                          hint="Required because the Vero unit price or period above is zero."
-                          error={touched ? errors.veroExceptionReason : undefined}
-                          required
-                        >
-                          {(id, describedBy) => (
-                            <Textarea
-                              id={id}
-                              aria-describedby={describedBy}
-                              rows={2}
-                              value={rule.veroExceptionReason ?? ''}
-                              onChange={(e) => patch({ veroExceptionReason: e.target.value })}
-                            />
-                          )}
-                        </Field>
-                      </div>
-                    )}
-                  </fieldset>
                 </>
               )}
             </CardBody>

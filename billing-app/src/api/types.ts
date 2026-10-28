@@ -231,6 +231,24 @@ export interface ImageCaptionCost {
   totalCost: number
 }
 
+/**
+ * One tier's billed activity for one workspace in one specific month — the
+ * "Monthly Report for Financial Department" panel on the dashboard. A
+ * workspace billed under several tiers that month (e.g. two generic tiers
+ * plus Vero) produces one row per tier, not one row per workspace.
+ */
+export interface FinancialReportRow {
+  region: string
+  workspaceId: number
+  workspaceName: string
+  matterNumber: string | null
+  /** Display names of every application billed under this row's tier. */
+  applications: string[]
+  docCount: number
+  dollarAmount: number
+  unitPrice: number
+}
+
 export interface ProjectSummary {
   workspaceId: number
   workspaceName: string

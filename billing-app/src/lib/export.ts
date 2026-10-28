@@ -1,4 +1,4 @@
-import { MONTHS, type AnalyzedTimeInfo } from '@/api/types'
+import { MONTHS, type AnalyzedTimeInfo, type FinancialReportRow } from '@/api/types'
 
 /* Export, replacing the DataTables buttons the current views rely on.
  *
@@ -61,6 +61,39 @@ export function exportRows(
     r.TotalPrice.toFixed(2),
     r.YearCount,
     ...MONTHS.flatMap((_, i) => [r.Counts[i] ?? 0, (r.Money[i] ?? 0).toFixed(2)]),
+  ])
+
+  download(filename, [header, ...body], format === 'xlsx')
+}
+
+/** One row per workspace per billed tier for the selected month — mirrors the
+ * on-screen Financial Report table exactly, applications included in full
+ * (not truncated the way the table displays them). */
+export function exportFinancialReport(
+  filename: string,
+  rows: FinancialReportRow[],
+  format: 'csv' | 'xlsx',
+) {
+  const header = [
+    'Workspace ID',
+    'Workspace Name',
+    'Matter Number',
+    'Region',
+    'Applications',
+    'Doc Count',
+    'Dollar Amount',
+    'Unit Price',
+  ]
+
+  const body = rows.map((r) => [
+    r.workspaceId,
+    r.workspaceName,
+    r.matterNumber,
+    r.region,
+    r.applications.join(', '),
+    r.docCount,
+    r.dollarAmount.toFixed(2),
+    r.unitPrice.toFixed(3),
   ])
 
   download(filename, [header, ...body], format === 'xlsx')

@@ -18,6 +18,104 @@ namespace Billing.DataAccess
     {
         private readonly ProjectRepository _projects = new ProjectRepository();
 
+        // "Monthly Report for Financial Department" panel on the dashboard: one row per
+        // workspace per billed tier for one specific month — unlike every other report in
+        // this file, which aggregates across a year or all time, Finance wants exactly
+        // what was billed that month, broken out by tier (so a workspace billed under two
+        // generic tiers plus Vero that month produces three rows). Rows with no amount
+        // billed that month are left out entirely, not shown as zero.
+        public List<FinancialReportRow> GetFinancialReport(int year, int month, string region, string suffix)
+        {
+            var rows = new List<FinancialReportRow>();
+            foreach (var oneRegion in Regions.Resolve(region))
+            {
+                rows.AddRange(GetFinancialReportForRegion(year, month, oneRegion, suffix));
+            }
+            return rows;
+        }
+
+        private List<FinancialReportRow> GetFinancialReportForRegion(int year, int month, string region, string suffix)
+        {
+            var result = new List<FinancialReportRow>();
+            using (var conn = BillingDbConnectionFactory.Create(region))
+            {
+                var billed = conn.Query(
+                    $@"SELECT [workspaceId] AS WorkspaceId, [tier] AS Tier, [count] AS Count, [amount] AS Amount
+                       FROM [dbo].[billing_tier{suffix}]
+                       WHERE [year] = @year AND [month] = @month AND [tier] != 'Excluded' AND [amount] <> 0",
+                    new { year, month }).ToList();
+
+                if (billed.Count == 0) return result;
+
+                var workspaceIds = billed.Select(r => (int)r.WorkspaceId).Distinct().ToList();
+
+                var projects = conn.Query(
+                    $@"SELECT [workspaceId] AS WorkspaceId, [name] AS Name, [matter_number] AS MatterNumber,
+                              [chat_unit_price] AS ChatUnitPrice
+                       FROM [dbo].[project{suffix}] WHERE [workspaceId] IN @workspaceIds",
+                    new { workspaceIds })
+                    .ToDictionary(r => (int)r.WorkspaceId, r => r);
+
+                // Applications billed under each tier, by workspace — e.g. Tier_1 might
+                // cover TextPredict + Mine, while the dedicated "Chat" tier always has
+                // exactly one member (the app literally named "Chat", displayed as "Vero").
+                var appsByWorkspace = conn.Query(
+                    $@"SELECT [workspaceId] AS WorkspaceId, [app] AS App, [tier] AS Tier
+                       FROM [dbo].[app_tier{suffix}] WHERE [workspaceId] IN @workspaceIds AND [tier] != 'Excluded'",
+                    new { workspaceIds })
+                    .GroupBy(r => (int)r.WorkspaceId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.GroupBy(r => (string)r.Tier, StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(
+                                gt => gt.Key,
+                                gt => gt.Select(r => AppMetadata.GetDisplayName((string)r.App)).ToList(),
+                                StringComparer.OrdinalIgnoreCase));
+
+                // Tier_info holds the real rate for every ordinary tier. Vero/Chat's rate
+                // always comes from project.chat_unit_price instead — tier_info can hold a
+                // row for "Chat" too (per-tier mode inserts one for every tier in play, see
+                // BillingRuleRepository.SaveRule), but its price there is never the real
+                // Vero rate, just whatever the per-tier form happened to submit for it.
+                var pricesByWorkspace = conn.Query(
+                    $@"SELECT [workspaceId] AS WorkspaceId, [tier] AS Tier, [price] AS Price
+                       FROM [dbo].[tier_info{suffix}] WHERE [workspaceId] IN @workspaceIds",
+                    new { workspaceIds })
+                    .GroupBy(r => (int)r.WorkspaceId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.ToDictionary(r => (string)r.Tier, r => (decimal)(r.Price ?? 0m), StringComparer.OrdinalIgnoreCase));
+
+                foreach (var b in billed)
+                {
+                    int workspaceId = (int)b.WorkspaceId;
+                    string tier = (string)b.Tier;
+                    if (!projects.TryGetValue(workspaceId, out var project)) continue;
+
+                    var apps = appsByWorkspace.TryGetValue(workspaceId, out var tiersForWs) &&
+                        tiersForWs.TryGetValue(tier, out var appList) ? appList : new List<string>();
+
+                    decimal unitPrice = string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
+                        ? (decimal)(project.ChatUnitPrice ?? 0m)
+                        : (pricesByWorkspace.TryGetValue(workspaceId, out var pricesForWs) &&
+                           pricesForWs.TryGetValue(tier, out var p) ? p : 0m);
+
+                    result.Add(new FinancialReportRow
+                    {
+                        Region = region,
+                        WorkspaceId = workspaceId,
+                        WorkspaceName = project.Name,
+                        MatterNumber = project.MatterNumber,
+                        Applications = apps,
+                        DocCount = (int)(b.Count ?? 0),
+                        DollarAmount = (decimal)(b.Amount ?? 0m),
+                        UnitPrice = unitPrice,
+                    });
+                }
+            }
+            return result;
+        }
+
         public List<AppUsage> GetAppUsage(int? year, string region, string suffix)
         {
             var perRegion = Regions.Resolve(region).Select(r => GetAppUsageForRegion(year, r, suffix)).ToList();

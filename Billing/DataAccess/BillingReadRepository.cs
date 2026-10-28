@@ -66,9 +66,15 @@ namespace Billing.DataAccess
         public Dictionary<string, Dictionary<int, (int Count, decimal Amount)>> GetMonthTierCountsForWorkspace(
             int workspaceId, int? year, ProjectInfo project, string region, string suffix)
         {
-            var tiers = project.SingleUnitRate
-                ? new[] { "Tier_0" }
-                : project.JobGroupList.Values.Distinct().ToArray();
+            var tierList = new List<string>(
+                project.SingleUnitRate ? new[] { "Tier_0" } : project.JobGroupList.Values.Distinct());
+            // Vero/Chat is billed through its own dedicated tier (never one of
+            // JobGroupList's app tiers), and only gets a row here once it has an
+            // actual billing_tier entry — so a billable workspace with no Vero usage
+            // yet would otherwise show no Vero row at all. Seed it explicitly so it
+            // always appears (with zero counts) alongside the other tiers.
+            if (project.IsDefined == 0) tierList.Add("Chat");
+            var tiers = tierList.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
             var result = new Dictionary<string, Dictionary<int, (int, decimal)>>();
             foreach (var tier in tiers)

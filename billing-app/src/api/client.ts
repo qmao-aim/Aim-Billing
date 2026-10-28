@@ -11,6 +11,7 @@
  *   getLlmChatCosts        -> GET  /api/ai-costs/llm-chat
  *   getSummarizationCosts  -> GET  /api/ai-costs/summarization
  *   getImageCaptionCosts   -> GET  /api/ai-costs/image-caption
+ *   getFinancialReport     -> GET  /api/financial-report
  *
  * The app is served by the same ASP.NET site it calls, so these are
  * same-origin requests carrying the OWIN auth cookie — no CORS, no token
@@ -24,6 +25,7 @@ import type {
   BillingRule,
   ConnectionStatus,
   Environment,
+  FinancialReportRow,
   ImageCaptionCost,
   LlmChatCost,
   PortfolioTotals,
@@ -164,4 +166,13 @@ export async function getImageCaptionCosts(
   year: YearFilter,
 ): Promise<ImageCaptionCost[]> {
   return apiGet('/api/ai-costs/image-caption', { region, year })
+}
+
+export async function getFinancialReport(
+  env: Environment,
+  region: Region,
+  year: number,
+  month: number,
+): Promise<FinancialReportRow[]> {
+  return apiGet('/api/financial-report', { env, region, year, month })
 }
