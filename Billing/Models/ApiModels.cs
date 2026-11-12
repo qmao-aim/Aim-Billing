@@ -91,6 +91,13 @@ namespace Billing.Models
         [JsonProperty("applications")]
         public List<string> Applications { get; set; } = new List<string>();
 
+        // False when the workspace has no billing rule in this app's model yet
+        // (project.is_test IS NULL) — it can still have real billed activity from
+        // before this app existed, but there's no rule-driven app/tier assignment
+        // to show, so the Applications column says so instead of showing nothing.
+        [JsonProperty("ruleDefined")]
+        public bool RuleDefined { get; set; }
+
         [JsonProperty("docCount")]
         public int DocCount { get; set; }
 

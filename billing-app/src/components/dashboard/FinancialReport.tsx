@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import { getFinancialReport } from '@/api/client'
 import { FIRST_YEAR } from '@/lib/years'
-import { MONTHS, type Region } from '@/api/types'
+import { MONTHS, REGIONS, type Region } from '@/api/types'
 import { useSession } from '@/lib/session-context'
 import { useAsync } from '@/lib/useAsync'
+import { cn } from '@/lib/utils'
 import { count, moneyExact, rate } from '@/lib/format'
-import { exportFinancialReport } from '@/lib/export'
+import { exportFinancialReport, financialReportApplications } from '@/lib/export'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '@/components/ui/States'
@@ -17,6 +18,10 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from '@/components/ui/States'
  * tier for a single selected month (not the page's own year/all-time period),
  * since Finance reconciles month by month. Rows with nothing billed that
  * month are left out entirely — see DashboardRepository.GetFinancialReport.
+ *
+ * Region here is this panel's own filter, independent of the dashboard page's
+ * region selector above it — Finance may want a different region than
+ * whatever the rest of the page happens to be scoped to.
  */
 
 const now = new Date()
@@ -34,8 +39,9 @@ const MONTH_OPTIONS = (() => {
   return options
 })()
 
-export function FinancialReport({ region }: { region: Region }) {
+export function FinancialReport() {
   const { environment } = useSession()
+  const [region, setRegion] = useState<Region>('global')
   const [periodKey, setPeriodKey] = useState(`${MONTH_OPTIONS[0].year}-${MONTH_OPTIONS[0].month}`)
   const [year, month] = periodKey.split('-').map(Number)
 
@@ -53,6 +59,20 @@ export function FinancialReport({ region }: { region: Region }) {
         description={`Documents and dollars billed per workspace, by tier, in ${periodLabel}.`}
         actions={
           <>
+            <label className="flex items-center gap-2 text-[13px] text-secondary">
+              Region
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value as Region)}
+                className="h-9 rounded-[6px] border border-default bg-surface px-2.5 text-[14px] text-primary"
+              >
+                {REGIONS.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex items-center gap-2 text-[13px] text-secondary">
               Month
               <select
@@ -136,8 +156,11 @@ export function FinancialReport({ region }: { region: Region }) {
                   <td className="whitespace-nowrap px-3 py-2 text-primary">{r.matterNumber ?? '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-primary">{r.region}</td>
                   <td className="max-w-[240px] px-3 py-2 text-primary">
-                    <span className="block truncate" title={r.applications.join(', ')}>
-                      {r.applications.join(', ') || '—'}
+                    <span
+                      className={cn('block truncate', !r.ruleDefined && 'italic text-secondary')}
+                      title={r.ruleDefined ? r.applications.join(', ') : undefined}
+                    >
+                      {financialReportApplications(r)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right text-primary">{count(r.docCount)}</td>

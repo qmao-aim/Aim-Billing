@@ -51,7 +51,7 @@ namespace Billing.DataAccess
 
                 var projects = conn.Query(
                     $@"SELECT [workspaceId] AS WorkspaceId, [name] AS Name, [matter_number] AS MatterNumber,
-                              [chat_unit_price] AS ChatUnitPrice
+                              [chat_unit_price] AS ChatUnitPrice, [unit_price] AS UnitPrice, [is_test] AS IsTest
                        FROM [dbo].[project{suffix}] WHERE [workspaceId] IN @workspaceIds",
                     new { workspaceIds })
                     .ToDictionary(r => (int)r.WorkspaceId, r => r);
@@ -84,7 +84,7 @@ namespace Billing.DataAccess
                     .GroupBy(r => (int)r.WorkspaceId)
                     .ToDictionary(
                         g => g.Key,
-                        g => g.ToDictionary(r => (string)r.Tier, r => (decimal)(r.Price ?? 0m), StringComparer.OrdinalIgnoreCase));
+                        g => g.ToDictionary(r => (string)r.Tier, r => (decimal?)r.Price, StringComparer.OrdinalIgnoreCase));
 
                 foreach (var b in billed)
                 {
@@ -92,13 +92,24 @@ namespace Billing.DataAccess
                     string tier = (string)b.Tier;
                     if (!projects.TryGetValue(workspaceId, out var project)) continue;
 
+                    // IsTest (project.is_test) is only NULL when no rule has ever been set in
+                    // this app's model — a workspace can still have real billed activity from
+                    // before this app existed (legacy app_tier/tier_info rows with no is_test
+                    // flag), which is exactly when there's no per-tier app list to show below.
+                    bool ruleDefined = project.IsTest != null;
+
                     var apps = appsByWorkspace.TryGetValue(workspaceId, out var tiersForWs) &&
                         tiersForWs.TryGetValue(tier, out var appList) ? appList : new List<string>();
 
+                    // tier_info's price for this tier, when a real row exists for it — not
+                    // found (no rule, or a tier tier_info never covered) falls back to the
+                    // project's own default rate rather than showing a bare $0.00.
+                    decimal? tierPrice = pricesByWorkspace.TryGetValue(workspaceId, out var pricesForWs) &&
+                        pricesForWs.TryGetValue(tier, out var p) ? p : null;
+
                     decimal unitPrice = string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
                         ? (decimal)(project.ChatUnitPrice ?? 0m)
-                        : (pricesByWorkspace.TryGetValue(workspaceId, out var pricesForWs) &&
-                           pricesForWs.TryGetValue(tier, out var p) ? p : 0m);
+                        : (tierPrice ?? (decimal)(project.UnitPrice ?? 0m));
 
                     result.Add(new FinancialReportRow
                     {
@@ -107,6 +118,7 @@ namespace Billing.DataAccess
                         WorkspaceName = project.Name,
                         MatterNumber = project.MatterNumber,
                         Applications = apps,
+                        RuleDefined = ruleDefined,
                         DocCount = (int)(b.Count ?? 0),
                         DollarAmount = (decimal)(b.Amount ?? 0m),
                         UnitPrice = unitPrice,
@@ -193,8 +205,24 @@ namespace Billing.DataAccess
                     ? $"{currentYear} is in progress — {monthsBilledThisYear} of 12 months billed so far."
                     : null;
 
-                var completeYears = mergedSeries.Where(p => p.Label != currentYear.ToString()).ToList();
-                var (pct, label) = ComputeChange(completeYears, "vs. prior complete year");
+                int completedMonths = DateTime.UtcNow.Month - 1;
+                decimal currentYtdTotal = raws.Sum(r => r.CurrentYtdTotal);
+                decimal priorYtdTotal = raws.Sum(r => r.PriorYtdTotal);
+
+                decimal pct;
+                string label;
+                if (completedMonths <= 0 || priorYtdTotal == 0m)
+                {
+                    pct = 0m;
+                    label = "Not enough completed months yet to compare";
+                }
+                else
+                {
+                    var monthNames = new[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+                    string throughMonth = monthNames[completedMonths - 1];
+                    pct = Math.Round((currentYtdTotal - priorYtdTotal) / priorYtdTotal * 100m, 1);
+                    label = $"Jan–{throughMonth} {currentYear} vs Jan–{throughMonth} {currentYear - 1}";
+                }
 
                 return new PortfolioTotals
                 {
@@ -219,6 +247,8 @@ namespace Billing.DataAccess
             public long TotalDocuments;
             public int ActiveProjects;
             public List<int> BilledMonthsThisYear = new List<int>();
+            public decimal CurrentYtdTotal;
+            public decimal PriorYtdTotal;
         }
 
         private RawRegionTotals GetRawTotalsForRegion(int? year, string region, string suffix)
@@ -279,6 +309,29 @@ namespace Billing.DataAccess
                            WHERE (p.[is_test] IS NULL OR p.[is_test] = 0) AND bt.[year] = @currentYear AND bt.[amount] > 0",
                         new { currentYear }).ToList();
 
+                    // Year-over-year compares the current (in-progress) year against the
+                    // same number of completed months last year, not full calendar years —
+                    // e.g. on Nov 12 the comparison is Jan-Oct this year vs Jan-Oct last year.
+                    int completedMonths = DateTime.UtcNow.Month - 1;
+                    decimal currentYtdTotal = 0m;
+                    decimal priorYtdTotal = 0m;
+                    if (completedMonths > 0)
+                    {
+                        var ytdRows = conn.Query(
+                            $@"SELECT bt.[year] AS Year, SUM(bt.[amount]) AS Amount
+                               FROM [dbo].[billing_tier{suffix}] bt
+                               INNER JOIN [dbo].[project{suffix}] p ON bt.workspaceId = p.workspaceId
+                               WHERE (p.[is_test] IS NULL OR p.[is_test] = 0)
+                                 AND bt.[month] <= @completedMonths
+                                 AND bt.[year] IN (@currentYear, @priorYear)
+                               GROUP BY bt.[year]",
+                            new { completedMonths, currentYear, priorYear = currentYear - 1 })
+                            .ToDictionary(r => (int)r.Year, r => (decimal)(r.Amount ?? 0m));
+
+                        currentYtdTotal = ytdRows.TryGetValue(currentYear, out var cv) ? cv : 0m;
+                        priorYtdTotal = ytdRows.TryGetValue(currentYear - 1, out var pv) ? pv : 0m;
+                    }
+
                     return new RawRegionTotals
                     {
                         Series = series,
@@ -286,6 +339,8 @@ namespace Billing.DataAccess
                         TotalDocuments = totalDocs,
                         ActiveProjects = activeProjects,
                         BilledMonthsThisYear = billedMonths,
+                        CurrentYtdTotal = currentYtdTotal,
+                        PriorYtdTotal = priorYtdTotal,
                     };
                 }
             }
@@ -321,14 +376,15 @@ namespace Billing.DataAccess
                 .ToList();
         }
 
-        private static (decimal Pct, string Label) ComputeChange(List<SeriesPoint> series, string label)
+        private static (decimal Pct, string Label) ComputeChange(List<SeriesPoint> series, string fallbackLabel)
         {
             var withData = series.Where(p => p.Value != 0).ToList();
-            if (withData.Count < 2) return (0m, label);
+            if (withData.Count < 2) return (0m, fallbackLabel);
             var last = withData[withData.Count - 1];
             var prev = withData[withData.Count - 2];
-            if (prev.Value == 0) return (0m, label);
-            return (Math.Round((last.Value - prev.Value) / prev.Value * 100m, 1), label);
+            if (prev.Value == 0) return (0m, fallbackLabel);
+            var pct = Math.Round((last.Value - prev.Value) / prev.Value * 100m, 1);
+            return (pct, $"{last.Label} vs {prev.Label}");
         }
     }
 }

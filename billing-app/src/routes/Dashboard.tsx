@@ -128,7 +128,7 @@ export function Dashboard() {
           <Stat
             label={allTime ? 'Year over year' : 'Month over month'}
             value={totals.data ? percent(totals.data.changePct) : null}
-            hint={totals.data?.changeLabel ?? ''}
+            hint={totals.data?.changeLabel ? `(${totals.data.changeLabel})` : ''}
             trend={totals.data?.changePct}
           />
         </div>
@@ -176,7 +176,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <FinancialReport region={region} />
+      <FinancialReport />
     </div>
   )
 }

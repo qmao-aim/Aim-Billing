@@ -66,6 +66,14 @@ export function exportRows(
   download(filename, [header, ...body], format === 'xlsx')
 }
 
+/** A workspace with no billing rule set yet has nothing rule-driven to list —
+ * shown as its own message rather than a blank cell or a bare dash, which
+ * would read as "this tier has no applications" instead of "no rule yet". */
+export function financialReportApplications(r: FinancialReportRow): string {
+  if (!r.ruleDefined) return 'Rule not set yet'
+  return r.applications.join(', ') || '—'
+}
+
 /** One row per workspace per billed tier for the selected month — mirrors the
  * on-screen Financial Report table exactly, applications included in full
  * (not truncated the way the table displays them). */
@@ -90,7 +98,7 @@ export function exportFinancialReport(
     r.workspaceName,
     r.matterNumber,
     r.region,
-    r.applications.join(', '),
+    financialReportApplications(r),
     r.docCount,
     r.dollarAmount.toFixed(2),
     r.unitPrice.toFixed(3),

@@ -46,14 +46,15 @@ export function ProjectDetail() {
   const totalRow = rows.find((r) => r.JobName === 'All applications')
   // Rows in server order: "All applications" first, then (when a rule is defined)
   // a tier-grouped breakdown — a tier's subtotal row immediately followed by its
-  // member applications. bodyRows drives the on-screen table: it drops the total
-  // row above, and drops Vero's app row specifically — Vero's tier only ever has
-  // the one member (Chat/Vero itself), so showing both the tier subtotal and the
-  // identical per-app row right under it is pure duplication. appRows stays
-  // IsAppRow-only and keeps Vero, for anything that must see every real
-  // application (charts, threshold proximity) — JobName can't be used for that
-  // distinction since Vero's dedicated tier is literally named "Chat".
-  const bodyRows = rows.filter((r) => r !== totalRow && !(r.IsAppRow && r.JobName === 'Chat'))
+  // member applications. When a tier subtotal row for Vero exists, its member
+  // app row (Chat/Vero itself) is a pure duplicate and gets dropped. But a
+  // workspace can have real Vero usage with no rule defined yet (or a legacy
+  // rule this app doesn't recognize) — then there's no tier row to fall back
+  // on, and dropping the lone Chat app row would hide Vero's usage entirely.
+  const hasChatTierRow = rows.some((r) => r.JobName === 'Chat' && !r.IsAppRow)
+  const bodyRows = rows.filter(
+    (r) => r !== totalRow && !(hasChatTierRow && r.IsAppRow && r.JobName === 'Chat'),
+  )
   const appRows = rows.filter((r) => r.IsAppRow)
   const rule = ruleQuery.data
 

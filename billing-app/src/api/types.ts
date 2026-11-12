@@ -244,6 +244,10 @@ export interface FinancialReportRow {
   matterNumber: string | null
   /** Display names of every application billed under this row's tier. */
   applications: string[]
+  /** False when this workspace has no billing rule set in this app's model yet
+   * — it can still have real billed activity from before this app existed,
+   * just nothing rule-driven to list under Applications. */
+  ruleDefined: boolean
   docCount: number
   dollarAmount: number
   unitPrice: number
