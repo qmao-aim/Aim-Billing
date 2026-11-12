@@ -285,7 +285,14 @@ namespace Billing.DataAccess
             var tierMoneyRows = new List<AnalyzedTimeInfo>();
             var placedApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            if (project.IsDefined != -1)
+            // Group by tier whenever there's real tier data to group by — not only when
+            // IsDefined != -1. A workspace can be back to "undefined" (is_test nulled out)
+            // while still carrying real app_tier/tier_info/billing_tier rows left over from
+            // before it was reset, and those billed amounts are real; this is what lets them
+            // surface here instead of silently reading as "no billing data at all".
+            bool hasTierStructure = project.IsDefined != -1 || project.JobGroupList.Count > 0;
+
+            if (hasTierStructure)
             {
                 var tierCounts = GetMonthTierCountsForWorkspace(workspaceId, year, project, region, suffix);
                 // Vero/Chat's dedicated tier is sorted after every generic tier (but still
@@ -361,7 +368,7 @@ namespace Billing.DataAccess
             // grouping) — or, when no rule is defined yet, the raw per-app rows with
             // no tier framing at all, since there's nothing to group by.
             var result = new List<AnalyzedTimeInfo> { allAppsRow };
-            result.AddRange(project.IsDefined != -1 ? groupedRows : (IEnumerable<AnalyzedTimeInfo>)appRows.Values);
+            result.AddRange(hasTierStructure ? groupedRows : (IEnumerable<AnalyzedTimeInfo>)appRows.Values);
             return result;
         }
 

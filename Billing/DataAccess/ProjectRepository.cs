@@ -45,33 +45,39 @@ namespace Billing.DataAccess
                     CreatedOn = row.created_on,
                 };
 
-                if (info.IsDefined != -1)
-                {
-                    var tierRows = conn.Query(
-                        $@"SELECT a.[app] AS App, a.[tier] AS Tier, b.[price] AS Price, b.[threshold] AS Threshold
-                           FROM [dbo].[app_tier{suffix}] a
-                           LEFT JOIN [dbo].[tier_info{suffix}] b
-                             ON a.workspaceId = b.workspaceId AND a.tier = b.tier
-                           WHERE a.[workspaceId] = @workspaceId",
-                        new { workspaceId });
+                // Not gated on IsDefined: a workspace can have real app_tier/tier_info rows
+                // from a rule that was set and later reset back to "undefined" (is_test
+                // nulled out directly in the database without clearing the tier data it
+                // left behind) — confirmed to happen in production. Skipping this query
+                // for IsDefined == -1 would hide that leftover tier/rate data from every
+                // reader of ProjectInfo, including the Project Detail breakdown table,
+                // even though the data (and its billed history) is real. A workspace that
+                // has genuinely never had a rule simply has no app_tier rows, so this is a
+                // no-op for it either way.
+                var tierRows = conn.Query(
+                    $@"SELECT a.[app] AS App, a.[tier] AS Tier, b.[price] AS Price, b.[threshold] AS Threshold
+                       FROM [dbo].[app_tier{suffix}] a
+                       LEFT JOIN [dbo].[tier_info{suffix}] b
+                         ON a.workspaceId = b.workspaceId AND a.tier = b.tier
+                       WHERE a.[workspaceId] = @workspaceId",
+                    new { workspaceId });
 
-                    foreach (var t in tierRows)
+                foreach (var t in tierRows)
+                {
+                    string app = t.App;
+                    string tier = t.Tier;
+                    if (string.Equals(tier, "Excluded", StringComparison.OrdinalIgnoreCase))
                     {
-                        string app = t.App;
-                        string tier = t.Tier;
-                        if (string.Equals(tier, "Excluded", StringComparison.OrdinalIgnoreCase))
-                        {
-                            info.ExcludeList[app] = true;
-                            continue;
-                        }
-                        info.JobGroupList[app] = tier;
-                        if (!info.UnitRates.ContainsKey(tier))
-                        {
-                            decimal rate = t.Price ?? (string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
-                                ? (info.ChatUnitPrice ?? 0m) : 0m);
-                            info.UnitRates[tier] = rate;
-                            info.Thresholds[tier] = t.Threshold ?? 0;
-                        }
+                        info.ExcludeList[app] = true;
+                        continue;
+                    }
+                    info.JobGroupList[app] = tier;
+                    if (!info.UnitRates.ContainsKey(tier))
+                    {
+                        decimal rate = t.Price ?? (string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
+                            ? (info.ChatUnitPrice ?? 0m) : 0m);
+                        info.UnitRates[tier] = rate;
+                        info.Thresholds[tier] = t.Threshold ?? 0;
                     }
                 }
 
