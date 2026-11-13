@@ -66,11 +66,15 @@ export function exportRows(
   download(filename, [header, ...body], format === 'xlsx')
 }
 
-/** A workspace with no billing rule set yet has nothing rule-driven to list —
- * shown as its own message rather than a blank cell or a bare dash, which
- * would read as "this tier has no applications" instead of "no rule yet". */
+/** A workspace with no custom billing rule still bills at the platform's
+ * default rate (set in the `project` table, applied automatically — not
+ * something an Admin configured here), so it has nothing rule-driven to
+ * list under Applications. Shown as its own message rather than a blank
+ * cell or a bare dash, which would read as "this tier has no applications",
+ * and worded to not imply $0 — a workspace in this state can still carry
+ * a real dollar amount in this same row. */
 export function financialReportApplications(r: FinancialReportRow): string {
-  if (!r.ruleDefined) return 'Rule not set yet'
+  if (!r.ruleDefined) return 'Default rate (no custom rule)'
   return r.applications.join(', ') || '—'
 }
 
