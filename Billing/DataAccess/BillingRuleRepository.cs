@@ -45,34 +45,17 @@ namespace Billing.DataAccess
             {
                 veroExceptionReason = null;
                 isAppExcluded = true;
-                var defaultExcluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                    { "TextCluster", "Expand", "Explore", "Sentimize", "Emoji", "Footer" };
+                var defaultExcluded = new HashSet<string>(DefaultBillingRule.ExcludedApps, StringComparer.OrdinalIgnoreCase);
                 jobExcludeList = AppMetadata.RuleEngineApps.ToDictionary(a => a, a => defaultExcluded.Contains(a));
 
                 sameUnitPrice = false;
-                var defaultTiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "TextPredict", "Tier_1" },
-                    { "ImagePredict", "Tier_2" },
-                    { "ImageCluster", "Tier_2" },
-                    { "Privilege", "Tier_3" },
-                    { "Mine", "Tier_1" },
-                    { "ConstructionPredict", "Tier_1" },
-                    { "PrivLog", "Tier_4" },
-                };
                 // Excluded apps get no meaningful tier assignment — the form never shows
                 // one for them — so "Tier_1" here is just a harmless placeholder.
                 jobGroupList = AppMetadata.RuleEngineApps.ToDictionary(
-                    a => a, a => defaultTiers.TryGetValue(a, out var t) ? t : "Tier_1");
+                    a => a, a => DefaultBillingRule.Tiers.TryGetValue(a, out var t) ? t : "Tier_1");
 
-                unitPrices = new Dictionary<string, decimal>
-                {
-                    { "Tier_1", 0.03m }, { "Tier_2", 0.05m }, { "Tier_3", 0.10m }, { "Tier_4", 1.00m },
-                };
-                thresholdValues = new Dictionary<string, int>
-                {
-                    { "Tier_1", 0 }, { "Tier_2", 0 }, { "Tier_3", 0 }, { "Tier_4", 0 },
-                };
+                unitPrices = DefaultBillingRule.TierRates.ToDictionary(kv => kv.Key, kv => kv.Value);
+                thresholdValues = DefaultBillingRule.TierRates.Keys.ToDictionary(t => t, t => 0);
             }
 
             return new BillingRule

@@ -46,14 +46,19 @@ export function ProjectDetail() {
   const totalRow = rows.find((r) => r.JobName === 'All applications')
   // Rows in server order: "All applications" first, then (when a rule is defined)
   // a tier-grouped breakdown — a tier's subtotal row immediately followed by its
-  // member applications. When a tier subtotal row for Vero exists, its member
-  // app row (Chat/Vero itself) is a pure duplicate and gets dropped. But a
-  // workspace can have real Vero usage with no rule defined yet (or a legacy
-  // rule this app doesn't recognize) — then there's no tier row to fall back
-  // on, and dropping the lone Chat app row would hide Vero's usage entirely.
+  // member applications. Vero and Privilege Narrator are each the sole member of
+  // their own dedicated tier (Chat and PrivLog respectively), so when that tier's
+  // subtotal row exists, its one member app row is a pure duplicate and gets
+  // dropped. But a workspace can have real usage with no rule defined yet (or a
+  // legacy rule this app doesn't recognize) — then there's no tier row to fall
+  // back on, and dropping the lone app row would hide that usage entirely.
   const hasChatTierRow = rows.some((r) => r.JobName === 'Chat' && !r.IsAppRow)
+  const hasPrivLogTierRow = rows.some((r) => r.JobName === 'PrivLog' && !r.IsAppRow)
   const bodyRows = rows.filter(
-    (r) => r !== totalRow && !(hasChatTierRow && r.IsAppRow && r.JobName === 'Chat'),
+    (r) =>
+      r !== totalRow &&
+      !(hasChatTierRow && r.IsAppRow && r.JobName === 'Chat') &&
+      !(hasPrivLogTierRow && r.IsAppRow && r.JobName === 'PrivLog'),
   )
   const appRows = rows.filter((r) => r.IsAppRow)
   const rule = ruleQuery.data

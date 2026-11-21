@@ -31,7 +31,13 @@ namespace Billing.DataAccess
             {
                 rows.AddRange(GetFinancialReportForRegion(year, month, oneRegion, suffix));
             }
-            return rows;
+            // Un-grouped otherwise: a workspace billed under two tiers in the same month (e.g.
+            // a generic tier plus Vero) would land in two separate rows wherever they happened
+            // to fall in billing_tier's own order, instead of next to each other.
+            return rows
+                .OrderBy(r => r.WorkspaceName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.WorkspaceId)
+                .ToList();
         }
 
         private List<FinancialReportRow> GetFinancialReportForRegion(int year, int month, string region, string suffix)
@@ -51,7 +57,8 @@ namespace Billing.DataAccess
 
                 var projects = conn.Query(
                     $@"SELECT [workspaceId] AS WorkspaceId, [name] AS Name, [matter_number] AS MatterNumber,
-                              [chat_unit_price] AS ChatUnitPrice, [unit_price] AS UnitPrice, [is_test] AS IsTest
+                              [chat_unit_price] AS ChatUnitPrice, [privlog_unit_price] AS PrivLogUnitPrice,
+                              [unit_price] AS UnitPrice, [is_test] AS IsTest
                        FROM [dbo].[project{suffix}] WHERE [workspaceId] IN @workspaceIds",
                     new { workspaceIds })
                     .ToDictionary(r => (int)r.WorkspaceId, r => r);
@@ -98,8 +105,19 @@ namespace Billing.DataAccess
                     // flag), which is exactly when there's no per-tier app list to show below.
                     bool ruleDefined = project.IsTest != null;
 
-                    var apps = appsByWorkspace.TryGetValue(workspaceId, out var tiersForWs) &&
-                        tiersForWs.TryGetValue(tier, out var appList) ? appList : new List<string>();
+                    // Both Chat and PrivLog are always exactly one app's own dedicated tier, so
+                    // the tier name alone already says which app — no need for the app_tier
+                    // lookup below, which can come up empty for either of them: PrivLog's tier
+                    // only exists when there's no real app_tier row for it at all (see Billing.cs's
+                    // GetTireCountsForWorkspace_New), and a rule saved before Vero/Chat billing
+                    // existed as a feature (same idea as one saved before PrivLog existed) never
+                    // got a Chat row added retroactively either — a rule is write-once.
+                    var apps = string.Equals(tier, "PrivLog", StringComparison.OrdinalIgnoreCase)
+                        ? new List<string> { AppMetadata.GetDisplayName("PrivLog") }
+                        : string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
+                        ? new List<string> { AppMetadata.GetDisplayName("Chat") }
+                        : appsByWorkspace.TryGetValue(workspaceId, out var tiersForWs) &&
+                            tiersForWs.TryGetValue(tier, out var appList) ? appList : new List<string>();
 
                     // tier_info's price for this tier, when a real row exists for it — not
                     // found (no rule, or a tier tier_info never covered) falls back to the
@@ -107,9 +125,21 @@ namespace Billing.DataAccess
                     decimal? tierPrice = pricesByWorkspace.TryGetValue(workspaceId, out var pricesForWs) &&
                         pricesForWs.TryGetValue(tier, out var p) ? p : null;
 
+                    // Chat/Vero and PrivLog each have their own dedicated default rate (never
+                    // tier_info's) — PrivLog gets a real tier_info-backed tier like any other
+                    // app once a rule assigns it one; its own "PrivLog" tier only ever appears
+                    // (see Billing.cs's GetTireCountsForWorkspace_New) when no rule has assigned
+                    // it anywhere, so tierPrice is never meaningful for it either. A literal
+                    // "Tier_1"/"Tier_2"/"Tier_3" with no tier_info row is the org's suggested
+                    // default rate for a never-configured workspace (DefaultBillingRule), not
+                    // this project's flat rate — those two numbers are unrelated.
                     decimal unitPrice = string.Equals(tier, "Chat", StringComparison.OrdinalIgnoreCase)
                         ? (decimal)(project.ChatUnitPrice ?? 0m)
-                        : (tierPrice ?? (decimal)(project.UnitPrice ?? 0m));
+                        : string.Equals(tier, "PrivLog", StringComparison.OrdinalIgnoreCase)
+                            ? (decimal)(project.PrivLogUnitPrice ?? DefaultBillingRule.TierRates["Tier_4"])
+                            : (tierPrice ?? (DefaultBillingRule.TierRates.TryGetValue(tier, out var defaultRate)
+                                ? defaultRate
+                                : (decimal)(project.UnitPrice ?? 0m)));
 
                     result.Add(new FinancialReportRow
                     {

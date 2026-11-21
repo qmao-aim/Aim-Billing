@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dapper;
 using Billing.Models;
+using Billing.Services;
 
 namespace Billing.DataAccess
 {
@@ -18,8 +19,8 @@ namespace Billing.DataAccess
             {
                 var row = conn.QueryFirstOrDefault(
                     $@"SELECT workspaceId, name, matter_number, prod_info, unit_price, unit_threshold, is_test,
-                              has_exclude, singleRate, chat_unit_price, chat_period, vero_exception_reason, synced_on,
-                              created_by, created_on
+                              has_exclude, singleRate, chat_unit_price, chat_period, privlog_unit_price,
+                              vero_exception_reason, synced_on, created_by, created_on
                        FROM [dbo].[project{suffix}] WHERE [workspaceId] = @workspaceId",
                     new { workspaceId });
 
@@ -39,6 +40,7 @@ namespace Billing.DataAccess
                     SingleUnitRate = row.singleRate ?? true,
                     ChatUnitPrice = row.chat_unit_price,
                     ChatPeriod = row.chat_period,
+                    PrivLogUnitPrice = row.privlog_unit_price,
                     VeroExceptionReason = row.vero_exception_reason,
                     SyncedOn = row.synced_on,
                     CreatedBy = row.created_by,
@@ -79,6 +81,60 @@ namespace Billing.DataAccess
                         info.UnitRates[tier] = rate;
                         info.Thresholds[tier] = t.Threshold ?? 0;
                     }
+                }
+
+                // A workspace with no rule set yet has no app_tier rows at all (the loop above
+                // is a no-op), but the legacy offline job still bills it — at the org's
+                // suggested-default rule (DefaultBillingRule, the same suggestion the Set
+                // Billing Rule form shows), so there's always a real number for Finance
+                // instead of nothing. Synthesize that same mapping here so every reader of
+                // ProjectInfo (the Project Detail breakdown) sees it. A workspace with ANY
+                // real app_tier rows — even just one, even if it's actually an "unlocked"
+                // workspace's leftover data — keeps using that real data untouched instead:
+                // recomputing it under this default could silently overwrite genuine
+                // historical amounts billed under whatever real rule it used to have,
+                // if a tier name happens to collide (e.g. its own old "Tier_1").
+                if (tierRows.Count() == 0 && info.IsDefined == -1)
+                {
+                    // So GetMonthTierCountsForWorkspace pre-seeds Tier_1/2/3 from JobGroupList
+                    // below instead of a single flat "Tier_0" that no longer matches anything
+                    // this synthesizes.
+                    info.SingleUnitRate = false;
+                    foreach (var app in AppMetadata.Apps)
+                    {
+                        if (string.Equals(app, AppMetadata.Chat, StringComparison.OrdinalIgnoreCase))
+                        {
+                            info.JobGroupList[app] = "Chat";
+                        }
+                        else if (string.Equals(app, "PrivLog", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Routed to its own dedicated bucket/rate (privlog_unit_price),
+                            // not DefaultBillingRule's literal "Tier_4" entry — same effective
+                            // rate, one fewer code path to keep in sync. See that class's comment.
+                            info.JobGroupList[app] = "PrivLog";
+                        }
+                        else if (DefaultBillingRule.Tiers.TryGetValue(app, out var tier))
+                        {
+                            info.JobGroupList[app] = tier;
+                        }
+                        else
+                        {
+                            // Default-excluded (TextCluster, Expand, Explore, Sentimize, Emoji,
+                            // Footer), or DeDupe/Thread (never had rule-engine support at all,
+                            // see AppMetadata's own comment) — not billed under this default.
+                            info.ExcludeList[app] = true;
+                        }
+                    }
+                    foreach (var tier in DefaultBillingRule.TierRates.Keys)
+                    {
+                        if (tier == "Tier_4") continue; // nothing maps here; see above
+                        info.UnitRates[tier] = DefaultBillingRule.TierRates[tier];
+                        info.Thresholds[tier] = 0;
+                    }
+                    info.UnitRates["Chat"] = info.ChatUnitPrice ?? 0m;
+                    info.Thresholds["Chat"] = 0;
+                    info.UnitRates["PrivLog"] = info.PrivLogUnitPrice ?? DefaultBillingRule.TierRates["Tier_4"];
+                    info.Thresholds["PrivLog"] = 0;
                 }
 
                 var tierTotal = conn.QueryFirstOrDefault(

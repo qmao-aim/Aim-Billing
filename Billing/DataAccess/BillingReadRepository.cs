@@ -70,10 +70,20 @@ namespace Billing.DataAccess
                 project.SingleUnitRate ? new[] { "Tier_0" } : project.JobGroupList.Values.Distinct());
             // Vero/Chat is billed through its own dedicated tier (never one of
             // JobGroupList's app tiers), and only gets a row here once it has an
-            // actual billing_tier entry — so a billable workspace with no Vero usage
-            // yet would otherwise show no Vero row at all. Seed it explicitly so it
-            // always appears (with zero counts) alongside the other tiers.
-            if (project.IsDefined == 0) tierList.Add("Chat");
+            // actual billing_tier entry — so a billable workspace (rule-defined, or
+            // undefined and billing at the project's default Vero rate — only a *test*
+            // workspace has no billing at all) with no Vero usage yet would otherwise
+            // show no Vero row at all. Seed it explicitly so it always appears (with
+            // zero counts) alongside the other tiers.
+            if (project.IsDefined != 1) tierList.Add("Chat");
+            // Likewise for PrivLog's own default-rate bucket — only ever created (see
+            // ProjectRepository.GetProjectInfo) when no rule has assigned PrivLog
+            // anywhere, same reasoning as Chat above.
+            if (project.JobGroupList.TryGetValue("PrivLog", out var privLogTier) &&
+                string.Equals(privLogTier, "PrivLog", StringComparison.OrdinalIgnoreCase))
+            {
+                tierList.Add("PrivLog");
+            }
             var tiers = tierList.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
             var result = new Dictionary<string, Dictionary<int, (int, decimal)>>();
@@ -299,8 +309,15 @@ namespace Billing.DataAccess
                 // before the "Excluded Tier" bucket below) rather than wherever it happens
                 // to fall alphabetically — it's a different kind of billing (period-based,
                 // not threshold-based) and reads better grouped apart from Tier_0..Tier_N.
+                // PrivLog's own dedicated tier sorts right after the generic tiers and before
+                // Chat — it's effectively "Tier 4" (the suggested default's own slot for it),
+                // just kept under its own name internally rather than literally "Tier_4" so it
+                // never collides with a real admin-assigned Tier_4 from an actual saved rule.
+                // Alphabetically "PrivLog" sorts before "Tier_1", which read as if it belonged
+                // ahead of every generic tier instead of after them.
                 var tiers = tierCounts.Keys
-                    .OrderBy(t => t.Equals("Chat", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                    .OrderBy(t => t.Equals("Chat", StringComparison.OrdinalIgnoreCase) ? 2
+                        : t.Equals("PrivLog", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
                     .ThenBy(t => t, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 

@@ -54,6 +54,44 @@ namespace Billing.Services
         public static bool IsKnownApp(string appName) => Apps.Contains(appName, StringComparer.OrdinalIgnoreCase);
     }
 
+    // The org's suggested default billing rule for a workspace with no rule set yet —
+    // shown on the Set Billing Rule form as a starting point (BillingRuleRepository.GetRule)
+    // AND what the legacy offline job (PredictiveCodingNetJob's Billing.cs) actually bills a
+    // never-configured workspace at automatically, so Finance always has a real number for
+    // it instead of nothing. The two are hand-kept in sync — Billing.cs is a separate
+    // codebase/deployment with no shared assembly, so a change here must be mirrored there
+    // too (GetTierCountTable's isDefined == -1 branch).
+    public static class DefaultBillingRule
+    {
+        // The exact suggestion BillingRuleRepository.GetRule shows on the Set Billing Rule
+        // form. Consumers that bill automatically rather than show a form (ProjectRepository's
+        // undefined-workspace synthesis, the legacy job) special-case PrivLog separately —
+        // it already gets its own dedicated default rate (privlog_unit_price) through the
+        // same mechanism used when a rule predates PrivLog entirely, so they route it to that
+        // instead of the literal "Tier_4" entry here, even though the effective rate is the
+        // same $1.00 either way.
+        public static readonly IReadOnlyCollection<string> ExcludedApps = new[]
+        {
+            "TextCluster", "Expand", "Explore", "Sentimize", "Emoji", "Footer",
+        };
+
+        public static readonly IReadOnlyDictionary<string, string> Tiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "TextPredict", "Tier_1" },
+            { "ImagePredict", "Tier_2" },
+            { "ImageCluster", "Tier_2" },
+            { "Privilege", "Tier_3" },
+            { "Mine", "Tier_1" },
+            { "ConstructionPredict", "Tier_1" },
+            { "PrivLog", "Tier_4" },
+        };
+
+        public static readonly IReadOnlyDictionary<string, decimal> TierRates = new Dictionary<string, decimal>
+        {
+            { "Tier_1", 0.03m }, { "Tier_2", 0.05m }, { "Tier_3", 0.10m }, { "Tier_4", 1.00m },
+        };
+    }
+
     public static class EnvironmentSuffix
     {
         public static string ForEnvironment(string env)
